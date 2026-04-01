@@ -23,16 +23,6 @@ export const ACTIVITIES = {
     { id: 'a15', name: 'Bowlero Hollywood', type: 'Bowling', desc: 'Upscale lanes with glow bowling and a full bar. Great energy on weekends.', rating: '4.5', dist: '4.5 mi', tag: 'Lively and energetic' },
     { id: 'a16', name: 'NoBar Karaoke', type: 'Karaoke', desc: 'Private rooms for 2–10 people. Bring your top 10 duets.', rating: '4.6', dist: '1.8 mi', tag: 'Unforgettable' },
   ],
-  Luxury: [
-    { id: 'a17', name: 'Nobu Malibu Dinner', type: 'Fine Dining', desc: 'Oceanfront Japanese cuisine at its finest. Reserve far in advance.', rating: '4.9', dist: '18 mi', tag: 'Splurge-worthy', featured: true },
-    { id: 'a18', name: 'Beverly Wilshire Spa', type: 'Couples Spa', desc: 'World-class couples massage packages in a Five-Star setting.', rating: '4.8', dist: '8.1 mi', tag: 'Ultimate relaxation', popular: true },
-    { id: 'a19', name: 'Helicopter Tour LA', type: 'Aerial Tour', desc: 'See the city from above at sunset. A truly unforgettable 30 minutes.', rating: '4.9', dist: '12 mi', tag: 'Once in a lifetime' },
-  ],
-  Outdoor: [
-    { id: 'a20', name: 'Temescal Canyon Hike', type: 'Hike', desc: 'Moderate canyon trail with a seasonal waterfall and ocean views.', rating: '4.7', dist: '9 mi', tag: 'Popular with couples', featured: true },
-    { id: 'a21', name: 'Malibu Beach Walk', type: 'Beach Walk', desc: 'Wind down at golden hour on the shore with a coffee in hand.', rating: '4.8', dist: '20 mi', tag: 'Most scenic', popular: true },
-    { id: 'a22', name: 'Kenneth Hahn Park Picnic', type: 'Park Picnic', desc: 'Peaceful park perfect for a picnic and a slow afternoon together.', rating: '4.6', dist: '7 mi', tag: 'Cozy and quiet' },
-  ],
 };
 
 export const RESTAURANTS = {
@@ -55,14 +45,6 @@ export const RESTAURANTS = {
     { id: 'r10', name: 'Shake Shack DTLA', cuisine: 'American', desc: 'Great burgers and shakes. Casual, fast, always satisfying.', rating: '4.5', dist: '0.5 mi from activity', price: '$', note: 'Perfect after games', featured: true },
     { id: 'r11', name: 'Republique', cuisine: 'French Bistro', desc: "Stunning space in a historic building. One of LA's best brunches.", rating: '4.8', dist: '3.1 mi', price: '$$$', note: 'Elevated and relaxed' },
     { id: 'r12', name: 'Bavel', cuisine: 'Middle Eastern', desc: 'James Beard-nominated sibling of Bestia. Outstanding cocktails.', rating: '4.9', dist: '2.8 mi', price: '$$$', note: 'Great for celebrating', sponsored: true },
-  ],
-  Luxury: [
-    { id: 'r13', name: 'Providence', cuisine: 'Seafood', desc: "Two Michelin stars. LA's most celebrated restaurant.", rating: '5.0', dist: '6.2 mi', price: '$$$$', note: 'The best meal of your life', featured: true },
-    { id: 'r14', name: 'Spago Beverly Hills', cuisine: 'Californian', desc: "Wolfgang Puck's iconic flagship. Celeb-spotting and legendary food.", rating: '4.9', dist: '4.1 mi', price: '$$$$', note: 'Classic LA luxury' },
-  ],
-  Outdoor: [
-    { id: 'r15', name: 'Nobu Malibu', cuisine: 'Japanese', desc: 'Oceanside deck with sushi as the sun sets.', rating: '4.8', dist: '2.1 mi from trail', price: '$$$$', note: 'Perfect sunset dining', featured: true },
-    { id: 'r16', name: "Neptune's Net", cuisine: 'Seafood', desc: 'Legendary PCH shack for fish & chips. Cash only, zero pretension.', rating: '4.6', dist: '3.5 mi', price: '$', note: 'Iconic California stop' },
   ],
 };
 
@@ -118,6 +100,4 @@ export const VIBES = [
   { id: 'Chill',     emoji: '☕', desc: 'Slow, cozy, and easy' },
   { id: 'Romantic',  emoji: '🌹', desc: 'Dreamy, intimate, and special' },
   { id: 'Fun',       emoji: '🎉', desc: 'Playful, loud, and joyful' },
-  { id: 'Luxury',    emoji: '✨', desc: 'Premium, elevated, indulgent' },
-  { id: 'Outdoor',   emoji: '🌿', desc: 'Fresh air, nature, views' },
 ];

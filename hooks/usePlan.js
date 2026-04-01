@@ -8,6 +8,7 @@ export function PlanProvider({ children }) {
     date: '', dateDisplay: '', city: 'Los Angeles, CA',
     time: '', timeDisplay: '', vibe: '', mode: 'manual',
     activity: null, food: null, addonType: null, addonItem: null,
+    budget: '$$',
   });
 
   const [savedPlans, setSavedPlans] = useState(SAMPLE_SAVED_PLANS);
@@ -18,6 +19,7 @@ export function PlanProvider({ children }) {
     date: '', dateDisplay: '', city: 'Los Angeles, CA',
     time: '', timeDisplay: '', vibe: '', mode: 'manual',
     activity: null, food: null, addonType: null, addonItem: null,
+    budget: '$$',
   });
 
   const savePlan = () => {

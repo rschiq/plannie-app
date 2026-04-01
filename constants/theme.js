@@ -33,7 +33,5 @@ export const VIBE_COLORS = {
   Chill:     { bg: '#EAF5EA', text: '#3D8B3D' },
   Romantic:  { bg: '#FFF0F0', text: '#C4726A' },
   Fun:       { bg: '#FFF5E0', text: '#B8860B' },
-  Luxury:    { bg: '#FDF5E8', text: '#A8843E' },
-  Outdoor:   { bg: '#F0F5E8', text: '#4A7A4A' },
   Custom:    { bg: '#F5F0FF', text: '#6B5E58' },
 };
