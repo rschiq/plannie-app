@@ -3,9 +3,11 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../constants/theme';
+import { usePlan } from '../../hooks/usePlan';
 
 export default function HomeScreen() {
   const router = useRouter();
+const { resetPlan } = usePlan();
   return (
     <LinearGradient colors={['#2C2520', '#3D2D26', '#5C4038']} style={styles.container}
       start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
@@ -22,7 +24,7 @@ export default function HomeScreen() {
             Activities, food, flowers, and date ideas — guided by your vibe, ready in minutes.
           </Text>
           <TouchableOpacity style={styles.btnPrimary}
-            onPress={() => router.push('/plan/details')} activeOpacity={0.9}>
+            onPress={() => { resetPlan(); router.push('/plan/details'); }} activeOpacity={0.9}>
             <Text style={styles.btnPrimaryText}>✦  Start Planning</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnSecondary}

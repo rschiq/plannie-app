@@ -4,6 +4,7 @@ import { useFonts, CormorantGaramond_300Light, CormorantGaramond_300Light_Italic
 import { DMSans_300Light, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold } from '@expo-google-fonts/dm-sans';
 import { View, ActivityIndicator } from 'react-native';
 import { PlanProvider } from '../hooks/usePlan';
+import { PremiumProvider } from '../hooks/usePremium';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -27,19 +28,22 @@ export default function RootLayout() {
   }
 
   return (
-    <PlanProvider>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-        <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-        <Stack.Screen name="plan/details" />
-        <Stack.Screen name="plan/how" />
-        <Stack.Screen name="plan/vibe" />
-        <Stack.Screen name="plan/activity" />
-        <Stack.Screen name="plan/food-ask" />
-        <Stack.Screen name="plan/food" />
-        <Stack.Screen name="plan/addons" />
-        <Stack.Screen name="plan/cart" />
-      </Stack>
-    </PlanProvider>
+    <PremiumProvider>
+      <PlanProvider>
+        <StatusBar style="light" />
+        <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+          <Stack.Screen name="plan/details" />
+          <Stack.Screen name="plan/how" />
+          <Stack.Screen name="plan/vibe" />
+          <Stack.Screen name="plan/activity" />
+          <Stack.Screen name="plan/food-ask" />
+          <Stack.Screen name="plan/food" />
+          <Stack.Screen name="plan/addons" />
+          <Stack.Screen name="plan/cart" />
+          <Stack.Screen name="pro" />
+        </Stack>
+      </PlanProvider>
+    </PremiumProvider>
   );
 }

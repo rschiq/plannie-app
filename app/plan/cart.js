@@ -1,16 +1,217 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking } from 'react-native';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ACTIVITIES, RESTAURANTS, ADDONS } from '../../data';
-import { SmallButton } from '../../components/UI';
+import { getPlacesByVibe } from '../../services/placesService';
 
-function TimelineItem({ emoji, time, label, name, sub, isLast, onSwap, onRemove }) {
+// ─── Item Action Sheet (tap card → modal) ───────────────────
+function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
+  if (!item) return null;
+
+  function openInMaps() {
+    if (item.location?.lat && item.location?.lng) {
+      const url = 'https://www.google.com/maps/search/?api=1&query=' +
+        item.location.lat + ',' + item.location.lng +
+        '&query_place_id=' + (item.id || '');
+      Linking.openURL(url);
+    } else {
+      const query = encodeURIComponent(item.name + ' ' + (item.address || ''));
+      Linking.openURL('https://www.google.com/maps/search/?api=1&query=' + query);
+    }
+  }
+
   return (
-    <View style={styles.tiRow}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+
+          {/* Place Details */}
+          <Text style={styles.detailName}>{item.name}</Text>
+          <Text style={styles.detailCategory}>{item.sub || item.type || ''}</Text>
+
+          {/* Rating */}
+          {item.rating && (
+            <View style={styles.detailRatingRow}>
+              <Text style={styles.detailRating}>⭐ {item.rating}</Text>
+              {item.totalRatings > 0 && (
+                <Text style={styles.detailReviews}>
+                  ({item.totalRatings.toLocaleString()} reviews)
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* Address */}
+          {item.address && (
+            <View style={styles.detailAddressRow}>
+              <Text style={styles.detailAddressIcon}>📍</Text>
+              <Text style={styles.detailAddress}>{item.address}</Text>
+            </View>
+          )}
+          {item.distance != null && (
+  <View style={styles.detailRow}>
+    <Text style={styles.detailIcon}>🚗</Text>
+    <Text style={styles.detailAddress}>{item.distance} mi away</Text>
+  </View>
+)}
+
+          <View style={styles.detailDivider} />
+
+          {/* Actions */}
+          <TouchableOpacity style={styles.btnPrimary} onPress={openInMaps} activeOpacity={0.88}>
+            <Text style={styles.btnPrimaryText}>🗺️ Open in Maps</Text>
+          </TouchableOpacity>
+
+          <View style={styles.rowActions}>
+            <TouchableOpacity style={styles.btnSecondary} onPress={onSwap} activeOpacity={0.8}>
+              <Text style={styles.btnSecondaryText}>🔄 Swap</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btnSecondary, { borderWidth: 1, borderColor: '#FCDADA' }]} onPress={onRemove} activeOpacity={0.8}>
+              <Text style={[styles.btnSecondaryText, { color: colors.rose }]}>✕ Remove</Text>
+            </TouchableOpacity>
+          </View>
+
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Swap Sheet ──────────────────────────────────────────────
+function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const VIBE_MAP = { Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure' };
+
+  useEffect(() => {
+    if (!visible || !swapKey) return;
+    fetchSwapItems();
+  }, [visible, swapKey]);
+
+  async function fetchSwapItems() {
+    setLoading(true);
+    try {
+      const city = plan.city || 'Los Angeles';
+      const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
+        'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+      const geoRes = await fetch(geoUrl);
+      const geoData = await geoRes.json();
+      if (geoData.status === 'OK') {
+        const { lat, lng } = geoData.results[0].geometry.location;
+        if (swapKey === 'addon') {
+          const types = ['flowers', 'dessert', 'scenic'].filter((t) => t !== plan.addonType);
+          const addonOverride = {
+            flowers: { type: 'florist', keyword: 'flower shop' },
+            dessert: { type: 'bakery', keyword: 'dessert sweets' },
+            scenic: { type: 'tourist_attraction', keyword: 'scenic spot park' },
+          };
+          const results = await Promise.all(types.map(async (t) => {
+            const o = addonOverride[t];
+            const url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
+              'location=' + lat + ',' + lng + '&radius=8000&type=' + o.type +
+              '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+            const res = await fetch(url);
+            const data = await res.json();
+            const p = data.results?.[0];
+            if (!p) return { ...ADDONS[t][0], _addonType: t };
+            return { id: p.place_id, name: p.name, type: t, note: p.opening_hours?.open_now ? 'Open now' : 'Nearby', rating: p.rating ? parseFloat(p.rating).toFixed(1) : '4.0', dist: '', tag: p.rating >= 4.5 ? 'Highly rated' : 'Nearby', _addonType: t };
+          }));
+          setItems(results);
+          setLoading(false);
+          return;
+        }
+        const vibe = VIBE_MAP[plan.vibe] || 'romantic';
+        const fetchVibe = swapKey === 'food' ? 'foodie' : vibe;
+        const places = await getPlacesByVibe(fetchVibe, { lat, lng }, { radius: 8000, maxResults: 15 });
+
+const filtered = places
+  .filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id)
+  .filter((p) => (p.rating || 0) >= 4.0 && (p.totalRatings || 0) >= 50)
+  .sort((a, b) => {
+    const scoreA = (a.rating || 0) * Math.log(Math.max(a.totalRatings || 1, 1));
+    const scoreB = (b.rating || 0) * Math.log(Math.max(b.totalRatings || 1, 1));
+    return scoreB - scoreA;
+  })
+  .slice(0, 10);
+
+const finalList = filtered.length > 0 ? filtered : places
+  .filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id)
+  .slice(0, 5);
+
+const mapped = finalList.map((p) => ({
+          id: p.id, name: p.name, type: p.types?.[0]?.replace(/_/g, ' ') || 'Place',
+          cuisine: p.types?.[0]?.replace(/_/g, ' ') || 'Restaurant',
+          note: p.isOpenNow === true ? 'Open now' : 'Nearby',
+          rating: p.rating ? parseFloat(p.rating).toFixed(1) : '4.0', dist: '',
+          tag: p.rating >= 4.5 ? 'Highly rated' : 'Nearby',
+        }));
+        setItems(mapped);
+      }
+    } catch (e) {
+      const vibe = plan.vibe || 'Romantic';
+      const fallback = swapKey === 'activity'
+        ? (ACTIVITIES[vibe] || []).filter((a) => a.id !== plan.activity?.id).slice(0, 3)
+        : swapKey === 'food'
+        ? (RESTAURANTS[vibe] || []).filter((r) => r.id !== plan.food?.id).slice(0, 3)
+        : ['flowers', 'dessert', 'scenic'].filter((t) => t !== plan.addonType).map((t) => ({ ...ADDONS[t][0], _addonType: t }));
+      setItems(fallback);
+    }
+    setLoading(false);
+  }
+
+  if (!swapKey) return null;
+  const title = swapKey === 'activity' ? 'Swap Activity' : swapKey === 'food' ? 'Swap Restaurant' : 'Swap Add-On';
+
+  return (
+  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+      <TouchableOpacity activeOpacity={1} style={[styles.sheet, { maxHeight: '80%' }]}>
+        <View style={styles.sheetHandle} />
+        <Text style={styles.sheetName}>{title}</Text>
+        <Text style={styles.sheetSub}>Choose a different option nearby</Text>
+        {loading ? (
+          <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={colors.rose} />
+            <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginTop: 10 }}>
+              Finding alternatives…
+            </Text>
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            {items.map((item) => (
+              <TouchableOpacity key={item.id} style={styles.swapCard}
+                onPress={() => onSwap(swapKey, item)} activeOpacity={0.85}>
+                <View style={styles.swapCardInner}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.swapCardTitle}>{item.name}</Text>
+                    <Text style={styles.swapCardSub}>{item.type || item.cuisine || item.note}</Text>
+                    <Text style={styles.swapRating}>★ {item.rating}</Text>
+                  </View>
+                  <Text style={styles.swapArrow}>›</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  </Modal>
+);
+}
+
+// ─── Timeline Item (tap to open actions) ────────────────────
+function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, rating, distance, isOpenNow }) {
+  return (
+    <TouchableOpacity style={styles.tiRow} onPress={onTap} activeOpacity={0.75}>
       <View style={styles.tiLeft}>
         <View style={styles.tiDot}><Text style={styles.tiEmoji}>{emoji}</Text></View>
         {!isLast && <View style={styles.tiLine} />}
@@ -18,136 +219,168 @@ function TimelineItem({ emoji, time, label, name, sub, isLast, onSwap, onRemove 
       <View style={[styles.tiContent, !isLast && { paddingBottom: 28 }]}>
         <Text style={styles.tiTime}>{time} · {label}</Text>
         <Text style={styles.tiName}>{name}</Text>
-        <Text style={styles.tiSub}>{sub}</Text>
-        <View style={styles.tiActions}>
-          <SmallButton label="🔄 Swap" onPress={onSwap} />
-          <SmallButton label="✕ Remove" onPress={onRemove} variant="red" />
-        </View>
+        {sub ? <Text style={styles.tiSub}>{sub}</Text> : null}
+
+        {/* Rating + Distance row */}
+        {(rating || distance) && (
+          <View style={styles.tiMeta}>
+            {rating && <Text style={styles.tiRating}>⭐ {rating}</Text>}
+            {rating && distance && <Text style={styles.tiDot2}> · </Text>}
+            {distance && <Text style={styles.tiDistance}>{distance} mi</Text>}
+          </View>
+        )}
+
+        {/* Open now badge */}
+        {isOpenNow === true && (
+          <Text style={styles.tiOpen}>Open now</Text>
+        )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
-  if (!swapKey) return null;
-  const vibe = plan.vibe || 'Romantic';
-  let items = [], title = '', sub = '';
-  if (swapKey === 'activity') {
-    title = 'Swap Activity'; sub = 'Choose a different activity.';
-    items = (ACTIVITIES[vibe] || []).filter((a) => a.id !== plan.activity?.id).slice(0, 3);
-  } else if (swapKey === 'food') {
-    title = 'Swap Restaurant'; sub = 'A few more great options nearby.';
-    items = (RESTAURANTS[vibe] || []).filter((r) => r.id !== plan.food?.id).slice(0, 3);
-  } else {
-    title = 'Swap Add-On'; sub = 'Other finishing touches to consider.';
-    const types = ['flowers', 'dessert', 'scenic'].filter((t) => t !== plan.addonType);
-    items = types.map((t) => ({ ...ADDONS[t][0], _addonType: t })).slice(0, 3);
-  }
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={styles.sheetBody}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{title}</Text>
-          <Text style={styles.sheetSub}>{sub}</Text>
-          {items.map((item) => (
-            <TouchableOpacity key={item.id} style={styles.swapCard}
-              onPress={() => onSwap(swapKey, item)} activeOpacity={0.85}>
-              <View style={styles.swapCardInner}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.swapCardTitle}>{item.name}</Text>
-                  <Text style={styles.swapCardSub}>{item.type || item.cuisine || item.note}</Text>
-                  <View style={styles.swapCardMeta}>
-                    <Text style={styles.swapRating}>★ {item.rating}</Text>
-                    <Text style={styles.swapDist}>{item.dist}</Text>
-                    {(item.tag || item.note) && (
-                      <Text style={styles.swapTag}>{item.tag || item.note}</Text>
-                    )}
-                  </View>
-                </View>
-                <Text style={styles.swapArrow}>›</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-function SaveModal({ visible, onViewSaved, onCalendar, onKeepEditing }) {
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.saveOverlay}>
-        <View style={styles.saveBox}>
-          <Text style={styles.saveIcon}>🎉</Text>
-          <Text style={styles.saveTitle}>Your date plan{'\n'}is ready.</Text>
-          <Text style={styles.saveSub}>Saved and waiting. Time to look forward to something wonderful.</Text>
-          <TouchableOpacity style={styles.savePrimary} onPress={onViewSaved} activeOpacity={0.88}>
-            <Text style={styles.savePrimaryText}>View Saved Plans</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.saveSecondary} onPress={onCalendar} activeOpacity={0.8}>
-            <Text style={styles.saveSecondaryText}>📅  Add to Google Calendar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.saveGhost} onPress={onKeepEditing} activeOpacity={0.8}>
-            <Text style={styles.saveGhostText}>Keep Editing</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
+// ─── Main Screen ─────────────────────────────────────────────
 export default function CartScreen() {
   const router = useRouter();
-  const { plan, updatePlan, savePlan, fmtHM, getBaseHour, getBaseMin } = usePlan();
-  const [swapKey, setSwapKey] = useState(null);
-  const [showSave, setShowSave] = useState(false);
+  const { plan, updatePlan, savePlan, savedPlans, fmtHM, getBaseHour, getBaseMin } = usePlan();
+  const [swapKey, setSwapKey]           = useState(null);
+  useEffect(() => {
+  if (activeItem) console.log('Active item distance:', activeItem.distance);
+}, [activeItem]);
+  const [activeItem, setActiveItem]     = useState(null);
+  const [isSaved, setIsSaved]           = useState(false);
+  const [isSpecial, setIsSpecial]       = useState(false);
+  const [specialTitle, setSpecialTitle] = useState('');
+  const [showSpecialInput, setShowSpecialInput] = useState(false);
 
-  const baseH = getBaseHour();
-  const baseM = getBaseMin();
+  const baseH = getBaseHour() || 17;
+  const baseM = getBaseMin() || 0;
 
   const timelineItems = [];
-  if (plan.activity) timelineItems.push({ key: 'activity', emoji: '🎯', label: 'Activity', time: fmtHM(baseH, baseM), name: plan.activity.name, sub: plan.activity.type });
-  if (plan.food) timelineItems.push({ key: 'food', emoji: '🍽️', label: 'Dinner', time: fmtHM(baseH + 2, baseM), name: plan.food.name, sub: plan.food.cuisine });
-  if (plan.addonItem) {
-    const emoji = plan.addonType === 'flowers' ? '💐' : plan.addonType === 'dessert' ? '🍰' : '🌅';
-    const label = plan.addonType === 'flowers' ? 'Flowers' : plan.addonType === 'dessert' ? 'Dessert' : 'Scenic Stop';
-    timelineItems.push({ key: 'addon', emoji, label, time: fmtHM(baseH + 3, 30), name: plan.addonItem.name, sub: plan.addonItem.note });
-  }
+  if (plan.activity) timelineItems.push({
+  key: 'activity', emoji: '🎯', label: 'Activity',
+  time: fmtHM(baseH, baseM),
+  name: plan.activity.name,
+  sub: plan.activity.category,
+  rating: plan.activity.rating,
+  totalRatings: plan.activity.totalRatings,
+  address: plan.activity.address,
+  isOpenNow: plan.activity.isOpenNow,
+  location: plan.activity.location,
+  id: plan.activity.id,
+  distance: plan.activity.distance,
+});
+if (plan.food) timelineItems.push({
+  key: 'food', emoji: '🍽️', label: 'Dinner',
+  time: fmtHM(baseH + 2, baseM),
+  name: plan.food.name,
+  sub: plan.food.category,
+  rating: plan.food.rating,
+  totalRatings: plan.food.totalRatings,
+  address: plan.food.address,
+  isOpenNow: plan.food.isOpenNow,
+  location: plan.food.location,
+  id: plan.food.id,
+  distance: plan.food.distance,
+});
+if (plan.addonItem) {
+  const emoji = plan.addonType === 'flowers' ? '💐' : plan.addonType === 'dessert' ? '🍰' : '🌅';
+  const label = plan.addonType === 'flowers' ? 'Flowers' : plan.addonType === 'dessert' ? 'Dessert' : 'Scenic Stop';
+  timelineItems.push({
+    key: 'addon', emoji, label,
+    time: fmtHM(baseH + 3, 30),
+    name: plan.addonItem.name,
+    sub: plan.addonItem.note,
+    rating: plan.addonItem.rating,
+    totalRatings: plan.addonItem.totalRatings,
+    address: plan.addonItem.address || plan.addonItem.desc,
+    isOpenNow: plan.addonItem.isOpenNow,
+    location: plan.addonItem.location,
+    id: plan.addonItem.id,
+    distance: plan.addonItem.distance,
+  });
+}
 
   function removeItem(key) {
     if (key === 'activity') updatePlan({ activity: null });
     else if (key === 'food') updatePlan({ food: null });
     else updatePlan({ addonType: null, addonItem: null });
+    setActiveItem(null);
   }
 
   function handleSwap(key, item) {
-    const vibe = plan.vibe || 'Romantic';
     if (key === 'activity') updatePlan({ activity: item });
     else if (key === 'food') updatePlan({ food: item });
     else updatePlan({ addonType: item._addonType, addonItem: item });
     setSwapKey(null);
   }
 
-  function handleSave() { savePlan(); setShowSave(true); }
+  async function handleSave() {
+    if (isSaved) return;
+    savePlan();
+    setIsSaved(true);
+    if (isSpecial && specialTitle.trim()) {
+      try {
+        const raw = await AsyncStorage.getItem('@plannie_special_dates');
+        const existing = raw ? JSON.parse(raw) : [];
+        const newEntry = {
+          id: 'sd_' + Date.now(),
+          title: specialTitle.trim(),
+          date: plan.date || new Date().toISOString().split('T')[0],
+          planTitle: plan.vibe ? plan.vibe + ' Date Night' : 'Date Night',
+          city: plan.city || '',
+          vibe: plan.vibe || '',
+        };
+        await AsyncStorage.setItem('@plannie_special_dates', JSON.stringify([newEntry, ...existing]));
+      } catch (e) { console.log('Special date save error:', e.message); }
+    }
+  }
+
+  function handleShare() {
+    const latest = savedPlans[0];
+    const lines = [];
+    if (latest) {
+      lines.push(`${latest.title} 🎉`);
+      lines.push('');
+      const times = ['7:00 PM', '8:30 PM', '10:00 PM'];
+      latest.items.forEach((item, idx) => {
+        const parts = item.split(' ');
+        const emoji = parts[0];
+        const name = parts.slice(1).join(' ');
+        const time = times[idx] || '';
+        let line = '';
+        if (idx === 0) line = `${time} — 🎯 Start with a great time at ${name}`;
+        else if (emoji === '🍽️') line = `${time} — 🍽️ Enjoy dinner at ${name}`;
+        else if (emoji === '🍰') line = `${time} — 🍰 End the night with dessert at ${name}`;
+        else if (emoji === '💐') line = `${time} — 🌸 End the night with flowers from ${name}`;
+        else if (emoji === '🌅') line = `${time} — 🌅 End with a scenic stop at ${name}`;
+        else line = `${time} — ✨ Round off the night at ${name}`;
+        lines.push(line);
+      });
+      lines.push('');
+      lines.push(`📍 ${latest.city}`);
+      lines.push('');
+    }
+    lines.push('Planned with Plannie 💕');
+    Share.share({ message: lines.join('\n') });
+  }
 
   function handleCalendar() {
     const title = encodeURIComponent(plan.vibe ? `${plan.vibe} Date Night` : 'Plannie Date Night');
     const loc = encodeURIComponent(plan.city || 'Los Angeles, CA');
-    const details = encodeURIComponent('Planned with Plannie 💕');
-    const url = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${details}`;
-    Linking.openURL(url).catch(() => Alert.alert('Could not open Calendar', 'Please open Google Calendar manually.'));
+    const url = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${encodeURIComponent('Planned with Plannie 💕')}`;
+    Linking.openURL(url).catch(() => Alert.alert('Could not open Calendar'));
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
-        <LinearGradient colors={['#2C2520', '#4A3830', '#6B4F45']} style={styles.hero}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 48 }}>
+
+        {/* Hero */}
+        <LinearGradient colors={['#2C2520', '#4A3830', '#6B4F45']} style={styles.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+            <Text style={styles.backText}>← Back</Text>
+          </TouchableOpacity>
           <Text style={styles.heroLabel}>Your Date Plan</Text>
           <Text style={styles.heroTitle}>{plan.vibe ? `${plan.vibe} Date Night` : 'Your Date Plan'}</Text>
           <Text style={styles.heroMeta}>{plan.dateDisplay || 'Upcoming'} · {plan.city}</Text>
@@ -156,15 +389,24 @@ export default function CartScreen() {
           </View>
         </LinearGradient>
 
+        {/* Timeline */}
         {timelineItems.length > 0 ? (
           <View style={styles.timeline}>
             {timelineItems.map((item, idx) => (
-              <TimelineItem key={item.key} emoji={item.emoji} time={item.time}
-                label={item.label} name={item.name} sub={item.sub}
-                isLast={idx === timelineItems.length - 1}
-                onSwap={() => setSwapKey(item.key)}
-                onRemove={() => removeItem(item.key)} />
-            ))}
+  <TimelineItem
+    key={item.key}
+    emoji={item.emoji}
+    time={item.time}
+    label={item.label}
+    name={item.name}
+    sub={item.sub}
+    rating={item.rating}
+    distance={item.distance}
+    isOpenNow={item.isOpenNow}
+    isLast={idx === timelineItems.length - 1}
+    onTap={() => setActiveItem(item)}
+  />
+))}
           </View>
         ) : (
           <View style={styles.empty}>
@@ -175,84 +417,157 @@ export default function CartScreen() {
         )}
       </ScrollView>
 
+      {/* Bottom Bar */}
       <View style={styles.bbar}>
-        <TouchableOpacity style={styles.btnSave} onPress={handleSave} activeOpacity={0.88}>
-          <Text style={styles.btnSaveText}>✦  Save This Plan</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnGhost} onPress={() => router.push('/plan/activity')} activeOpacity={0.8}>
-          <Text style={styles.btnGhostText}>← Edit Plan</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnOutline} onPress={handleCalendar} activeOpacity={0.8}>
-          <Text style={styles.btnOutlineText}>📅  Add to Google Calendar</Text>
-        </TouchableOpacity>
+        {isSaved ? (
+          <View style={styles.savedState}>
+            <Text style={styles.savedBannerText}>🎉 Plan saved!</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleShare} activeOpacity={0.88}>
+              <Text style={styles.btnPrimaryText}>🔗 Share Plan</Text>
+            </TouchableOpacity>
+            <View style={styles.rowActions}>
+              <TouchableOpacity style={styles.btnSecondary} onPress={handleCalendar} activeOpacity={0.8}>
+                <Text style={styles.btnSecondaryText}>📅 Add to Calendar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSecondary} onPress={() => router.replace('/(tabs)')} activeOpacity={0.8}>
+                <Text style={styles.btnSecondaryText}>🏠 Home</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.unsavedState}>
+            <View style={styles.specialRow}>
+              <Text style={styles.specialLabel}>💍 Mark as special date</Text>
+              <Switch
+                value={isSpecial}
+                onValueChange={(val) => { setIsSpecial(val); setShowSpecialInput(val); }}
+                trackColor={{ false: colors.gray4, true: colors.rose }}
+                thumbColor={colors.white}
+                ios_backgroundColor={colors.gray4}
+              />
+            </View>
+            {showSpecialInput && (
+              <TextInput
+                style={styles.specialInput}
+                placeholder='"First Date", "Anniversary"…'
+                placeholderTextColor={colors.gray3}
+                value={specialTitle}
+                onChangeText={setSpecialTitle}
+                returnKeyType="done"
+              />
+            )}
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleSave} activeOpacity={0.88}>
+              <Text style={styles.btnPrimaryText}>✦ Save This Plan</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
-      <SwapSheet visible={!!swapKey} swapKey={swapKey} plan={plan}
-        onClose={() => setSwapKey(null)} onSwap={handleSwap} />
-      <SaveModal visible={showSave}
-        onViewSaved={() => { setShowSave(false); router.push('/(tabs)/saved'); }}
-        onCalendar={() => { handleCalendar(); setShowSave(false); }}
-        onKeepEditing={() => setShowSave(false)} />
+      {/* Item Action Sheet */}
+      <ItemActionSheet
+        visible={!!activeItem}
+        item={activeItem}
+        onClose={() => setActiveItem(null)}
+        onSwap={() => { setSwapKey(activeItem?.key); setActiveItem(null); }}
+        onRemove={() => removeItem(activeItem?.key)}
+      />
+
+      {/* Swap Sheet */}
+      <SwapSheet
+        visible={!!swapKey}
+        swapKey={swapKey}
+        plan={plan}
+        onClose={() => setSwapKey(null)}
+        onSwap={handleSwap}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.cream },
+  safe:   { flex: 1, backgroundColor: colors.cream },
   scroll: { flex: 1 },
-  hero: { padding: 28, paddingTop: 40, paddingBottom: 24 },
-  heroLabel: { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: colors.gold, marginBottom: 6 },
-  heroTitle: { fontFamily: fonts.displayLight, fontSize: 32, color: colors.cream, lineHeight: 36, letterSpacing: -0.3 },
-  heroMeta: { fontFamily: fonts.body, fontSize: 13, color: 'rgba(251,247,242,0.55)', marginTop: 8 },
-  heroPill: { marginTop: 12, backgroundColor: 'rgba(201,169,110,0.18)', borderWidth: 1, borderColor: 'rgba(201,169,110,0.25)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 5, alignSelf: 'flex-start' },
+
+  // Hero
+  hero:         { padding: 28, paddingTop: 40, paddingBottom: 24 },
+  backBtn:      { paddingBottom: 12 },
+  backText:     { fontFamily: fonts.bodyMedium, fontSize: 14, color: 'rgba(251,247,242,0.6)' },
+  heroLabel:    { fontFamily: fonts.bodyMedium, fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: colors.gold, marginBottom: 6 },
+  heroTitle:    { fontFamily: fonts.displayLight, fontSize: 32, color: colors.cream, lineHeight: 36, letterSpacing: -0.3 },
+  heroMeta:     { fontFamily: fonts.body, fontSize: 13, color: 'rgba(251,247,242,0.55)', marginTop: 8 },
+  heroPill:     { marginTop: 12, backgroundColor: 'rgba(201,169,110,0.18)', borderWidth: 1, borderColor: 'rgba(201,169,110,0.25)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 5, alignSelf: 'flex-start' },
   heroPillText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.gold },
-  timeline: { padding: 24, paddingBottom: 8 },
-  tiRow: { flexDirection: 'row', gap: 14 },
-  tiLeft: { alignItems: 'center', width: 40 },
-  tiDot: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.cream2, justifyContent: 'center', alignItems: 'center', ...shadow.sm, zIndex: 1 },
-  tiEmoji: { fontSize: 18 },
-  tiLine: { flex: 1, width: 2, backgroundColor: colors.cream2, marginTop: 4 },
+
+  // Timeline
+  timeline:  { padding: 24, paddingBottom: 8 },
+  tiRow:     { flexDirection: 'row', gap: 14 },
+  tiLeft:    { alignItems: 'center', width: 40 },
+  tiDot:     { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.cream2, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
+  tiEmoji:   { fontSize: 18 },
+  tiLine:    { flex: 1, width: 2, backgroundColor: colors.cream2, marginTop: 4 },
   tiContent: { flex: 1, paddingBottom: 8 },
-  tiTime: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.gray2, marginBottom: 2 },
-  tiName: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 2 },
-  tiSub: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 8 },
-  tiActions: { flexDirection: 'row', gap: 8 },
-  empty: { padding: 44, alignItems: 'center' },
-  emptyIcon: { fontSize: 44, marginBottom: 14 },
+  tiTime:    { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.gray2, marginBottom: 2 },
+  tiName:    { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 2 },
+  tiSub:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  tiHint:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray3, marginTop: 4, fontStyle: 'italic' },
+
+  // Empty
+  empty:      { padding: 44, alignItems: 'center' },
+  emptyIcon:  { fontSize: 44, marginBottom: 14 },
   emptyTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.gray2 },
-  emptySub: { fontFamily: fonts.body, fontSize: 13, color: colors.gray3, marginTop: 6, textAlign: 'center' },
-  bbar: { paddingHorizontal: 24, paddingBottom: 28, paddingTop: 10, backgroundColor: colors.cream, gap: 8 },
-  btnSave: { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 18, alignItems: 'center', marginBottom: 10 },
-  btnSaveText: { fontFamily: fonts.bodyMedium, fontSize: 16, color: colors.white },
-  btnGhost: { backgroundColor: colors.cream2, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
-  btnGhostText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.charcoal },
-  btnOutline: { borderRadius: 999, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray3, marginTop: 0 },
-  btnOutlineText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gray },
-  sheetOverlay: { flex: 1, backgroundColor: 'rgba(44,37,32,0.6)', justifyContent: 'flex-end' },
-  sheetBody: { backgroundColor: colors.cream, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: 24, paddingBottom: 40 },
+  emptySub:   { fontFamily: fonts.body, fontSize: 13, color: colors.gray3, marginTop: 6, textAlign: 'center' },
+
+  // Bottom bar
+  bbar:         { paddingHorizontal: 24, paddingBottom: 28, paddingTop: 12, backgroundColor: colors.cream },
+  savedState:   { gap: 8 },
+  unsavedState: { gap: 8 },
+  savedBannerText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.green, textAlign: 'center', marginBottom: 4 },
+
+  // Buttons
+  btnPrimary:      { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 18, alignItems: 'center' },
+  btnPrimaryText:  { fontFamily: fonts.bodyMedium, fontSize: 16, color: colors.white },
+  rowActions:      { flexDirection: 'row', gap: 8 },
+  btnSecondary:    { flex: 1, backgroundColor: colors.cream2, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
+  btnSecondaryText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
+
+  // Special date
+  specialRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.white, borderRadius: radius.sm, paddingHorizontal: 16, paddingVertical: 12 },
+  specialLabel: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal },
+  specialInput: { backgroundColor: colors.white, borderRadius: radius.sm, paddingHorizontal: 16, paddingVertical: 12, fontFamily: fonts.body, fontSize: 14, color: colors.charcoal, borderWidth: 1.5, borderColor: colors.rose },
+
+  // Sheets
+  overlay:    { flex: 1, backgroundColor: 'rgba(44,37,32,0.6)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.cream, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingTop: 24, paddingHorizontal: 24, paddingBottom: 40, maxHeight: '85%' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle: { fontFamily: fonts.display, fontSize: 28, color: colors.charcoal, marginBottom: 4 },
-  sheetSub: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 20 },
-  swapCard: { backgroundColor: colors.white, borderRadius: radius.sm, marginBottom: 10, ...shadow.sm },
+  sheetName:  { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, marginBottom: 4 },
+  sheetSub:   { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 20 },
+  sheetAction: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.cream2 },
+  sheetActionDanger: { borderBottomWidth: 0 },
+  sheetActionIcon:   { fontSize: 18, width: 28 },
+  sheetActionText:   { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.charcoal, flex: 1 },
+  sheetActionArrow:  { fontSize: 20, color: colors.gray3 },
+  cancelBtn:         { marginTop: 16, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray3, borderRadius: 999 },
+  cancelBtnText:     { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gray },
+
+  // Swap sheet
+  swapCard:      { backgroundColor: colors.white, borderRadius: radius.sm, marginBottom: 10 },
   swapCardInner: { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   swapCardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal },
-  swapCardSub: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginTop: 2 },
-  swapCardMeta: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
-  swapRating: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold2 },
-  swapDist: { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, backgroundColor: colors.cream2, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  swapTag: { fontFamily: fonts.body, fontSize: 11, color: colors.rose, backgroundColor: '#FDECEA', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  swapArrow: { fontSize: 20, color: colors.gray3 },
-  cancelBtn: { marginTop: 8, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray3, borderRadius: 999 },
-  cancelBtnText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gray },
-  saveOverlay: { flex: 1, backgroundColor: 'rgba(44,37,32,0.7)', justifyContent: 'center', alignItems: 'center', padding: 32 },
-  saveBox: { backgroundColor: colors.cream, borderRadius: radius.lg, padding: 40, width: '100%', alignItems: 'center' },
-  saveIcon: { fontSize: 52, marginBottom: 16 },
-  saveTitle: { fontFamily: fonts.display, fontSize: 34, color: colors.charcoal, textAlign: 'center', marginBottom: 8, lineHeight: 38 },
-  saveSub: { fontFamily: fonts.body, fontSize: 14, color: colors.gray, textAlign: 'center', lineHeight: 21, marginBottom: 28 },
-  savePrimary: { width: '100%', backgroundColor: colors.charcoal, borderRadius: 999, paddingVertical: 18, alignItems: 'center', marginBottom: 10 },
-  savePrimaryText: { fontFamily: fonts.bodyMedium, fontSize: 16, color: colors.white },
-  saveSecondary: { width: '100%', borderWidth: 1.5, borderColor: colors.gray3, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
-  saveSecondaryText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gray },
-  saveGhost: { width: '100%', backgroundColor: colors.cream2, borderRadius: 999, paddingVertical: 16, alignItems: 'center' },
-  saveGhostText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.charcoal },
+  swapCardSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginTop: 2 },
+  swapRating:    { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold2, marginTop: 4 },
+  swapArrow:     { fontSize: 20, color: colors.gray3 },
+  detailName:        { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, marginBottom: 4 },
+detailCategory:    { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 10 },
+detailRatingRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+detailRating:      { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.gold2 },
+detailReviews:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray2 },
+detailAddressRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+detailAddressIcon: { fontSize: 14, marginTop: 2 },
+detailAddress:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 20 },
+detailDivider:     { height: 1, backgroundColor: colors.cream2, marginVertical: 16 },
+tiMeta:     { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+tiRating:   { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold2 },
+tiDot2:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
+tiDistance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+tiOpen:     { fontFamily: fonts.bodyMedium, fontSize: 11, color: '#34C759', marginTop: 3 },
 });

@@ -8,10 +8,27 @@
     "splash": {
       "backgroundColor": "#2C2520"
     },
-    "assetBundlePatterns": ["**/*"],
-    "ios": { "supportsTablet": false, "bundleIdentifier": "com.plannie.app" },
-    "android": { "adaptiveIcon": { "backgroundColor": "#2C2520" }, "package": "com.plannie.app" },
-    "plugins": ["expo-router", "expo-font"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.plannie.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2C2520"
+      },
+      "package": "com.plannie.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "@react-native-community/datetimepicker"
+    ],
     "scheme": "plannie"
   }
 }

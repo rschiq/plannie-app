@@ -35,7 +35,7 @@ function SavedCard({ plan, onOpen, onCalendar, onDelete, onFavorite }) {
 
 export default function SavedScreen() {
   const router = useRouter();
-  const { savedPlans, deletePlan, toggleFavorite } = usePlan();
+  const { savedPlans, deletePlan, toggleFavorite, updatePlan } = usePlan();
 
   function openCalendar(plan) {
     const title = encodeURIComponent(plan.title || 'Plannie Date Night');
@@ -45,11 +45,16 @@ export default function SavedScreen() {
   }
 
   function confirmDelete(id) {
+  if (typeof window !== 'undefined' && window.confirm) {
+    const confirmed = window.confirm('Are you sure you want to delete this plan?');
+    if (confirmed) deletePlan(id);
+  } else {
     Alert.alert('Delete Plan', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => deletePlan(id) },
     ]);
   }
+}
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
