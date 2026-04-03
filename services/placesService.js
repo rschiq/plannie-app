@@ -34,8 +34,22 @@ export const VIBE_CONFIG = {
   adventure: {
     emoji: '🏕️',
     label: 'Adventure',
-    types: ['tourist_attraction', 'bowling_alley'],
-    keywords: ['escape room', 'arcade', 'axe throwing', 'go kart', 'climbing gym', 'trampoline park', 'golf course', 'gun range'],
+    // ✅ No types — keyword-only strategy avoids generic tourist_attraction/museum results
+    types: [],
+    keywords: [
+      'go kart',
+      'escape room',
+      'axe throwing',
+      'arcade',
+      'vr gaming',
+      'shooting range',
+      'topgolf',
+      'trampoline park',
+      'climbing gym',
+      'paintball',
+      'laser tag',
+    ],
+    keywordsOnly: true, // skips type-based fetches entirely
     color: '#90BE6D',
   },
   foodie: {
@@ -48,7 +62,29 @@ export const VIBE_CONFIG = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Internal: fetch one type
+// Internal: fetch by keyword only (no type param — adventure path)
+// ─────────────────────────────────────────────────────────────
+async function fetchByKeywordOnly({ lat, lng, keyword, radius }) {
+  const params = new URLSearchParams({
+    location: `${lat},${lng}`,
+    radius: String(radius),
+    keyword,
+    key: GOOGLE_API_KEY,
+  });
+
+  const res = await fetch(`${BASE_URL}?${params.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const data = await res.json();
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+    throw new Error(`Places API: ${data.status}`);
+  }
+
+  return data.results ?? [];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Internal: fetch one type (original behaviour — all other vibes)
 // ─────────────────────────────────────────────────────────────
 async function fetchByType({ lat, lng, type, keyword, radius }) {
   const params = new URLSearchParams({
@@ -120,36 +156,58 @@ export async function getPlacesByVibe(vibe, location, options = {}) {
   const seen = new Set();
   const allPlaces = [];
 
-  // Fetch by types
-  const typeResults = await Promise.allSettled(
-    config.types.map((type) =>
-      fetchByType({ lat: location.lat, lng: location.lng, type, keyword: config.keywords[0], radius })
-    )
-  );
+  if (config.keywordsOnly) {
+    // ── Adventure path: one request per keyword, no type= param ──
+    // Fires all 11 keywords in parallel, dedupes by place_id
+    const results = await Promise.allSettled(
+      config.keywords.map((keyword) =>
+        fetchByKeywordOnly({ lat: location.lat, lng: location.lng, keyword, radius })
+      )
+    );
 
-  for (const result of typeResults) {
-    if (result.status !== 'fulfilled') continue;
-    for (const raw of result.value) {
-      if (!seen.has(raw.place_id)) {
-        seen.add(raw.place_id);
-        allPlaces.push(normalize(raw));
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue;
+      for (const raw of result.value) {
+        if (!seen.has(raw.place_id)) {
+          seen.add(raw.place_id);
+          allPlaces.push(normalize(raw));
+        }
       }
     }
-  }
+  } else {
+    // ── Original path: type-based + keyword-based (all other vibes) ──
 
-  // Fetch by keywords
-  const keywordResults = await Promise.allSettled(
-    config.keywords.slice(0, 4).map((keyword) =>
-      fetchByType({ lat: location.lat, lng: location.lng, type: config.types[0], keyword, radius })
-    )
-  );
+    // Fetch by types
+    const typeResults = await Promise.allSettled(
+      config.types.map((type) =>
+        fetchByType({ lat: location.lat, lng: location.lng, type, keyword: config.keywords[0], radius })
+      )
+    );
 
-  for (const result of keywordResults) {
-    if (result.status !== 'fulfilled') continue;
-    for (const raw of result.value) {
-      if (!seen.has(raw.place_id)) {
-        seen.add(raw.place_id);
-        allPlaces.push(normalize(raw));
+    for (const result of typeResults) {
+      if (result.status !== 'fulfilled') continue;
+      for (const raw of result.value) {
+        if (!seen.has(raw.place_id)) {
+          seen.add(raw.place_id);
+          allPlaces.push(normalize(raw));
+        }
+      }
+    }
+
+    // Fetch by keywords (capped at 4 to limit API calls)
+    const keywordResults = await Promise.allSettled(
+      config.keywords.slice(0, 4).map((keyword) =>
+        fetchByType({ lat: location.lat, lng: location.lng, type: config.types[0], keyword, radius })
+      )
+    );
+
+    for (const result of keywordResults) {
+      if (result.status !== 'fulfilled') continue;
+      for (const raw of result.value) {
+        if (!seen.has(raw.place_id)) {
+          seen.add(raw.place_id);
+          allPlaces.push(normalize(raw));
+        }
       }
     }
   }
