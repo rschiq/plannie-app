@@ -12,45 +12,120 @@ import { getPlacesByVibe } from '../../services/placesService';
 const VIBES = ['Adventure', 'Chill', 'Romantic', 'Fun'];
 const CARD_HEIGHT = 200;
 
-const LOADING_MESSAGES = [
-  'Finding the perfect vibe...',
-  'Curating your night...',
-  'Picking the best spots...',
-  'Almost ready...',
+// ─────────────────────────────────────────────────────────────
+// SURPRISE ME — Message pools (4 rounds, random pick per round)
+// ─────────────────────────────────────────────────────────────
+const SURPRISE_POOLS = [
+  ['🎲 Rolling the night...', '🎰 Spinning something good...', '🃏 Shuffling your date...', '🌀 Mixing things up...'],
+  ['🍜 Finding something delicious...', '🥂 Somewhere fancy?', '🍣 Maybe sushi tonight?', '🍕 Or casual and fun?'],
+  ['🎤 Karaoke maybe?', '🎳 Bowling night?', '🎭 Something unexpected...', '🎮 Game on!'],
+  ['🌆 Found a great spot...', '✨ Almost ready...', '💫 One more second...', '🌟 Your night is ready!'],
 ];
 
-// ── Loader ────────────────────────────────────────────────────
+const SLOT_EMOJIS = ['🎲', '🎰', '🎭', '🎤', '🍜', '🌆', '✨', '🎊'];
+
+// ─────────────────────────────────────────────────────────────
+// SURPRISE LOADER — playful, randomized, slot-machine feel
+// ─────────────────────────────────────────────────────────────
 function SurpriseLoader({ visible }) {
-  const [msgIndex, setMsgIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [message, setMessage]     = useState(SURPRISE_POOLS[0][0]);
+  const [slotEmoji, setSlotEmoji] = useState('🎲');
+  const [round, setRound]         = useState(0);
+
+  const msgOpacity    = useRef(new Animated.Value(0)).current;
+  const msgTranslateY = useRef(new Animated.Value(10)).current;
+  const emojiScale    = useRef(new Animated.Value(1)).current;
+  const emojiOpacity  = useRef(new Animated.Value(1)).current;
+  const glowScale     = useRef(new Animated.Value(1)).current;
   const dot1 = useRef(new Animated.Value(0.3)).current;
   const dot2 = useRef(new Animated.Value(0.3)).current;
   const dot3 = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
     if (!visible) return;
-    setMsgIndex(0);
 
-    const msgTimer = setInterval(() => {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
-        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    // Pick one random message from each pool upfront
+    const picked = SURPRISE_POOLS.map(
+      (pool) => pool[Math.floor(Math.random() * pool.length)]
+    );
+
+    let currentRound = 0;
+    let emojiIndex   = 0;
+
+    // Show first message immediately
+    setMessage(picked[0]);
+    setRound(0);
+    msgTranslateY.setValue(10);
+    Animated.parallel([
+      Animated.timing(msgOpacity,    { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.spring(msgTranslateY, { toValue: 0, speed: 16, bounciness: 6, useNativeDriver: true }),
+    ]).start();
+
+    function showNextMessage() {
+      // Slide out upward
+      Animated.parallel([
+        Animated.timing(msgOpacity,    { toValue: 0, duration: 260, useNativeDriver: true }),
+        Animated.timing(msgTranslateY, { toValue: -10, duration: 260, useNativeDriver: true }),
+      ]).start(() => {
+        currentRound = (currentRound + 1) % picked.length;
+        setMessage(picked[currentRound]);
+        setRound(currentRound);
+        msgTranslateY.setValue(12);
+        // Slide in from below
+        Animated.parallel([
+          Animated.timing(msgOpacity,    { toValue: 1, duration: 360, useNativeDriver: true }),
+          Animated.spring(msgTranslateY, { toValue: 0, speed: 14, bounciness: 5, useNativeDriver: true }),
+        ]).start();
       });
-    }, 1200);
+    }
 
-    const animateDots = () => {
+    function flipEmoji() {
+      Animated.parallel([
+        Animated.timing(emojiScale,   { toValue: 0.5, duration: 130, useNativeDriver: true }),
+        Animated.timing(emojiOpacity, { toValue: 0,   duration: 130, useNativeDriver: true }),
+      ]).start(() => {
+        emojiIndex = (emojiIndex + 1) % SLOT_EMOJIS.length;
+        setSlotEmoji(SLOT_EMOJIS[emojiIndex]);
+        Animated.parallel([
+          Animated.spring(emojiScale,   { toValue: 1, speed: 22, bounciness: 14, useNativeDriver: true }),
+          Animated.timing(emojiOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+        ]).start();
+      });
+    }
+
+    function pulseGlow() {
       Animated.sequence([
-        Animated.timing(dot1, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(dot2, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(dot3, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(dot1, { toValue: 0.3, duration: 300, useNativeDriver: true }),
-        Animated.timing(dot2, { toValue: 0.3, duration: 300, useNativeDriver: true }),
-        Animated.timing(dot3, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+        Animated.spring(glowScale, { toValue: 1.14, speed: 7, bounciness: 5, useNativeDriver: true }),
+        Animated.spring(glowScale, { toValue: 1.0,  speed: 7, bounciness: 5, useNativeDriver: true }),
+      ]).start(() => pulseGlow());
+    }
+
+    function animateDots() {
+      Animated.sequence([
+        Animated.timing(dot1, { toValue: 1,   duration: 240, useNativeDriver: true }),
+        Animated.timing(dot2, { toValue: 1,   duration: 240, useNativeDriver: true }),
+        Animated.timing(dot3, { toValue: 1,   duration: 240, useNativeDriver: true }),
+        Animated.timing(dot1, { toValue: 0.3, duration: 240, useNativeDriver: true }),
+        Animated.timing(dot2, { toValue: 0.3, duration: 240, useNativeDriver: true }),
+        Animated.timing(dot3, { toValue: 0.3, duration: 240, useNativeDriver: true }),
       ]).start(() => animateDots());
-    };
+    }
+
+    pulseGlow();
     animateDots();
 
-    return () => clearInterval(msgTimer);
+    // Schedule message + emoji changes with randomized timing
+    const timers = [];
+    let elapsed  = 0;
+    picked.forEach((_, idx) => {
+      if (idx === 0) return;
+      const delay = elapsed + 1000 + Math.floor(Math.random() * 400);
+      elapsed = delay;
+      timers.push(setTimeout(showNextMessage, delay));
+      timers.push(setTimeout(flipEmoji, delay - 180));
+    });
+
+    return () => timers.forEach(clearTimeout);
   }, [visible]);
 
   if (!visible) return null;
@@ -58,22 +133,36 @@ function SurpriseLoader({ visible }) {
   return (
     <Modal transparent animationType="fade" visible={visible}>
       <View style={loader.overlay}>
-        {/* ✅ Midnight Velvet loader — deep purple-black, no warm brown */}
         <LinearGradient
           colors={['#1E1C2C', '#2A2240', '#1A1828']}
           style={loader.box}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          {/* Rose gold glow ring */}
-          <View style={loader.glowRing}>
-            <Text style={loader.emoji}>🎲</Text>
+          {/* Pulsing glow ring with slot emoji */}
+          <Animated.View style={[loader.glowRing, { transform: [{ scale: glowScale }] }]}>
+            <Animated.Text
+              style={[loader.slotEmoji, { opacity: emojiOpacity, transform: [{ scale: emojiScale }] }]}
+            >
+              {slotEmoji}
+            </Animated.Text>
+          </Animated.View>
+
+          {/* Round progress dots */}
+          <View style={loader.rounds}>
+            {SURPRISE_POOLS.map((_, i) => (
+              <View key={i} style={[loader.roundDot, i <= round && loader.roundDotActive]} />
+            ))}
           </View>
 
-          <Animated.Text style={[loader.message, { opacity: fadeAnim }]}>
-            {LOADING_MESSAGES[msgIndex]}
+          {/* Animated message — slides in from below */}
+          <Animated.Text
+            style={[loader.message, { opacity: msgOpacity, transform: [{ translateY: msgTranslateY }] }]}
+          >
+            {message}
           </Animated.Text>
 
+          {/* Wave dots */}
           <View style={loader.dots}>
             <Animated.View style={[loader.dot, { opacity: dot1 }]} />
             <Animated.View style={[loader.dot, { opacity: dot2 }]} />
@@ -343,39 +432,56 @@ const styles = StyleSheet.create({
 const loader = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.80)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // ✅ Midnight Velvet loader — deep purple, NOT warm brown
   box: {
-    width: 280,
-    borderRadius: 28,
-    padding: 40,
+    width: 300,
+    borderRadius: 32,
+    paddingVertical: 40,
+    paddingHorizontal: 32,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(212,149,111,0.15)',  // subtle rose gold border
+    borderColor: 'rgba(212,149,111,0.18)',
   },
+  // Pulsing glow ring
   glowRing: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(212,149,111,0.10)',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(212,149,111,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(212,149,111,0.20)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(212,149,111,0.25)',
   },
-  emoji:   { fontSize: 36 },
+  slotEmoji: { fontSize: 40 },
+
+  // Round progress indicators
+  rounds: { flexDirection: 'row', gap: 6, marginBottom: 18 },
+  roundDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(212,149,111,0.25)',
+  },
+  roundDotActive: {
+    backgroundColor: colors.rose,
+    width: 18,  // active dot is wider (pill shape)
+  },
+
+  // Message — slides in/out
   message: {
     fontFamily: fonts.bodyMedium,
-    fontSize: 16,
-    color: colors.gold,
+    fontSize: 17,
+    color: '#F2EDE8',
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
+    marginBottom: 28,
+    lineHeight: 26,
+    minHeight: 52,  // reserve space so layout doesn't jump
   },
+
+  // Wave dots
   dots: { flexDirection: 'row', gap: 8 },
   dot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.rose },
 });

@@ -10,6 +10,8 @@ import { usePlan } from '../../hooks/usePlan';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
+import { SelectableCard } from '../../components/SelectableCard';
+import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
 
 const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
 
@@ -347,49 +349,31 @@ export default function DetailsScreen() {
         {/* ── BUDGET CARDS ──────────────────────────────── */}
         <Text style={styles.sectionLabel}>💰  What's your budget?</Text>
         <View style={styles.budgetRow}>
-          {BUDGETS.map((b) => {
-            const sel = budget === b.key;
-            const scaleAnim = useRef(new Animated.Value(1)).current;
-
-            function pressIn() {
-              Animated.spring(scaleAnim, { toValue: 0.95, useNativeDriver: true, speed: 30, bounciness: 4 }).start();
-            }
-            function pressOut() {
-              Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
-            }
-
-            return (
-              <TouchableOpacity
-                key={b.key}
-                onPress={() => setBudget(b.key)}
-                onPressIn={pressIn}
-                onPressOut={pressOut}
-                activeOpacity={1}
-                style={{ flex: 1 }}
-              >
-                <Animated.View
-                  style={[
-                    styles.budgetCard,
-                    sel && styles.budgetCardSel,
-                    { transform: [{ scale: scaleAnim }] },
-                  ]}
-                >
-                  <Text style={styles.budgetEmoji}>{b.emoji}</Text>
-                  <Text style={[styles.budgetKey, sel && styles.budgetKeyActive]}>{b.key}</Text>
-                  <Text style={[styles.budgetLabel, sel && styles.budgetLabelActive]} numberOfLines={2}>
-                    {b.label}
-                  </Text>
-                </Animated.View>
-              </TouchableOpacity>
-            );
-          })}
+          {BUDGETS.map((b) => (
+            <SelectableCard
+              key={b.key}
+              selected={budget === b.key}
+              onPress={() => setBudget(b.key)}
+              style={styles.budgetCard}
+              innerStyle={styles.budgetCardInner}
+              pressScale={0.95}
+            >
+              <Text style={styles.budgetEmoji}>{b.emoji}</Text>
+              <Text style={[styles.budgetKey, budget === b.key && styles.budgetKeyActive]}>
+                {b.key}
+              </Text>
+              <Text style={[styles.budgetLabel, budget === b.key && styles.budgetLabelActive]} numberOfLines={2}>
+                {b.label}
+              </Text>
+            </SelectableCard>
+          ))}
         </View>
 
         <View style={{ height: 32 }} />
       </ScrollView>
 
       <View style={styles.bbar}>
-        <PrimaryButton label="Next →" onPress={handleNext} disabled={!canContinue} />
+        <AnimatedPrimaryButton label="Next →" onPress={handleNext} disabled={!canContinue} />
       </View>
     </SafeAreaView>
   );
@@ -567,41 +551,11 @@ const styles = StyleSheet.create({
   dropSub:   { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 1 },
 
   // ── Budget cards ──────────────────────────────────────────
-  budgetRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  budgetCard: {
-    backgroundColor: colors.white,
-    borderRadius: CARD_RADIUS,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#C9A96E',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.09,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  budgetCardSel: {
-    borderColor: colors.rose,
-    backgroundColor: colors.cream3,
-    ...Platform.select({
-      ios: {
-        shadowColor: colors.rose,
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.18,
-        shadowRadius: 10,
-      },
-      android: { elevation: 5 },
-    }),
-  },
+  budgetRow: { flexDirection: 'row', gap: 8 },
+  // Outer layout only
+  budgetCard: { flex: 1 },
+  // Inner visual + padding
+  budgetCardInner: { paddingVertical: 14, paddingHorizontal: 6, alignItems: 'center' },
   budgetEmoji:      { fontSize: 18, marginBottom: 6 },
   budgetKey:        { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.gray2, marginBottom: 3 },
   budgetKeyActive:  { color: colors.rose },

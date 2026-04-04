@@ -7,6 +7,8 @@ import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { getPlacesByVibe } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton, SectionLabel, Divider } from '../../components/UI';
 import { AddonCard } from '../../components/ItemCard';
+import { SelectableCard } from '../../components/SelectableCard';
+import { AnimatedPrimaryButton, AnimatedOutlineButton } from '../../components/ScreenTransition';
 
 // ─── Removed ADDONS import — no more hardcoded LA fallback data ───
 
@@ -154,11 +156,12 @@ export default function AddonsScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         {ADDON_OPTIONS.map((opt) => (
-          <TouchableOpacity
+          <SelectableCard
             key={opt.key}
-            style={[styles.row, addonType === opt.key && styles.rowSel]}
+            selected={addonType === opt.key}
             onPress={() => pickType(opt.key)}
-            activeOpacity={0.85}
+            style={styles.row}
+            innerStyle={styles.rowInner}
           >
             <Text style={styles.rowEmoji}>{opt.emoji}</Text>
             <View style={styles.rowContent}>
@@ -166,7 +169,7 @@ export default function AddonsScreen() {
               <Text style={styles.rowSub}>{opt.sub}</Text>
             </View>
             {addonType === opt.key && <Text style={styles.selCheck}>✓</Text>}
-          </TouchableOpacity>
+          </SelectableCard>
         ))}
 
         {addonType && (
@@ -203,8 +206,8 @@ export default function AddonsScreen() {
       </ScrollView>
 
       <View style={styles.bbar}>
-        <PrimaryButton label="Add to Plan →" onPress={handleFinish} variant="rose" disabled={!addonType} />
-        <OutlineButton label="Skip" onPress={handleSkip} />
+        <AnimatedPrimaryButton label="Add to Plan →" onPress={handleFinish} variant="rose" disabled={!addonType} />
+        <AnimatedOutlineButton label="Skip" onPress={handleSkip} />
       </View>
     </SafeAreaView>
   );
@@ -214,17 +217,10 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
-  row: { backgroundColor: colors.white, borderRadius: radius.sm, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent', ...shadow.sm },
-  // ✅ Dark elevated + rose gold border — was '#FFF9F8' light pink
-  rowSel: {
-    borderColor: colors.rose,
-    backgroundColor: colors.cream3,
-    shadowColor: colors.rose,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.20,
-    shadowRadius: 10,
-    elevation: 6,
-  },
+  // Outer layout only
+  row: { marginBottom: 10 },
+  // Inner visual + padding
+  rowInner: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
   rowEmoji: { fontSize: 26 },
   rowContent: { flex: 1 },
   rowTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal },

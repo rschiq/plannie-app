@@ -7,6 +7,8 @@ import { usePlan } from '../../hooks/usePlan';
 import { usePremium } from '../../hooks/usePremium';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
+import { SelectableCard } from '../../components/SelectableCard';
+import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
 import { getPlacesByVibe } from '../../services/placesService';
 
 const VIBES = [
@@ -219,9 +221,9 @@ export default function VibeScreen() {
         {VIBES.map((item) => {
           const sel = selected === item.id;
           return (
-            <TouchableOpacity
+            <SelectableCard
               key={item.id}
-              style={[styles.card, sel && styles.cardSel]}
+              selected={sel}
               onPress={() => {
                 if (PRO_VIBES.includes(item.id) && !isPremium) {
                   router.push('/pro');
@@ -229,21 +231,21 @@ export default function VibeScreen() {
                 }
                 setSelected(item.id);
               }}
-              activeOpacity={0.85}
+              style={styles.card}
+              innerStyle={styles.cardInner}
             >
               <Text style={styles.emoji}>{item.emoji}</Text>
-              {/* ✅ Explicit warm white — colors.charcoal is now light, correct on dark cards */}
               <Text style={styles.name}>
                 {item.id} {item.pro && !isPremium ? '🔒' : ''}
               </Text>
               <Text style={styles.desc}>{item.desc}</Text>
-            </TouchableOpacity>
+            </SelectableCard>
           );
         })}
       </View>
 
       <View style={styles.bbar}>
-        <PrimaryButton label="Continue →" onPress={confirm} disabled={!selected} />
+        <AnimatedPrimaryButton label="Continue →" onPress={confirm} disabled={!selected} />
       </View>
     </SafeAreaView>
   );
@@ -261,29 +263,10 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
 
-  // ── Vibe card — dark elevated surface ─────────────────────
-  card: {
-    width: '47%',
-    backgroundColor: colors.cream2,    // #181626 dark elevated
-    borderRadius: radius.md,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...shadow.sm,
-  },
-
-  // ✅ Selected: dark elevated + rose gold border + glow
-  // Was '#FFF8F7' (light pink) — now stays dark with rose gold accent
-  cardSel: {
-    borderColor: colors.rose,          // rose gold border
-    backgroundColor: colors.cream3,    // #221F32 slightly lifted
-    shadowColor: colors.rose,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.30,
-    shadowRadius: 14,
-    elevation: 8,
-  },
+  // ── Vibe card — outer layout only ────────────────────────
+  card: { width: '47%' },
+  // ── Vibe card — inner visual + padding ───────────────────
+  cardInner: { padding: 20, alignItems: 'center' },
 
   emoji: { fontSize: 32, marginBottom: 8 },
   name: {
