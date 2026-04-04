@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -376,8 +376,17 @@ export default function CartScreen() {
   }
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 48 }}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 48 }}
+        keyboardShouldPersistTaps="handled"
+      >
 
         {/* ── Hero ── */}
         {/* ✅ Midnight Velvet hero — deep purple with rose gold warmth, no warm brown */}
@@ -491,6 +500,7 @@ export default function CartScreen() {
         onSwap={handleSwap}
       />
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 

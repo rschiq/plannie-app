@@ -220,22 +220,18 @@ export default function HowScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.grid}>
 
-          {/* ── Manual Card — dark elevated surface ── */}
+          {/* ── Manual Card ── */}
           <TouchableOpacity style={styles.manualCard} onPress={chooseManual} activeOpacity={0.85}>
             <Text style={styles.cardIcon}>🛠️</Text>
-            <View style={styles.cardMiddle}>
-              {/* ✅ Explicit warm white — NOT colors.charcoal (now light) */}
-              <Text style={styles.cardTitleDark} numberOfLines={2}>Build it{'\n'}myself</Text>
-              <Text style={styles.cardSubDark} numberOfLines={2}>Pick each part step by step</Text>
-            </View>
+            <Text style={styles.cardTitleDark}>Build it{'\n'}myself</Text>
+            <Text style={styles.cardSubDark}>Pick each part{'\n'}step by step</Text>
             <View style={styles.badgeMuted}>
               <Text style={styles.badgeMutedText}>MANUAL</Text>
             </View>
           </TouchableOpacity>
 
-          {/* ── Plan it for me Card — rose gold gradient ── */}
+          {/* ── Plan it for me Card ── */}
           <TouchableOpacity style={styles.autoCardWrap} onPress={choosePlanItForMe} activeOpacity={0.85}>
-            {/* ✅ Explicit dark purple gradient — NOT colors.charcoal (now warm white) */}
             <LinearGradient
               colors={['#2A2240', '#1E1C2C', '#241E38']}
               style={styles.autoCard}
@@ -243,11 +239,8 @@ export default function HowScreen() {
               end={{ x: 1, y: 1 }}
             >
               <Text style={styles.cardIcon}>✨</Text>
-              <View style={styles.cardMiddle}>
-                {/* ✅ Explicit warm white text */}
-                <Text style={styles.cardTitleLight} numberOfLines={2}>Plan it{'\n'}for me</Text>
-                <Text style={styles.cardSubLight} numberOfLines={2}>Full plan in seconds</Text>
-              </View>
+              <Text style={styles.cardTitleLight}>Plan it{'\n'}for me</Text>
+              <Text style={styles.cardSubLight}>Full plan in{'\n'}seconds</Text>
               <View style={styles.badgeGold}>
                 <Text style={styles.badgeGoldText}>✦ SMART</Text>
               </View>
@@ -301,33 +294,32 @@ const styles = StyleSheet.create({
 
   grid: { flexDirection: 'row', gap: 12, marginBottom: 12, alignItems: 'stretch' },
 
-  // ── Manual card — dark surface ──────────────────────────────
+  // ── Manual card ─────────────────────────────────────────────
   manualCard: {
     width: '48%',
     height: CARD_HEIGHT,
-    backgroundColor: colors.cream2,   // #181626 dark elevated
+    backgroundColor: colors.cream2,
     borderRadius: radius.md,
-    padding: 20,
-    justifyContent: 'space-between',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     borderWidth: 1,
-    borderColor: colors.gray4,        // #2A2838 subtle border
+    borderColor: colors.gray4,
     ...shadow.sm,
   },
 
-  // ── Auto card ───────────────────────────────────────────────
+  // ── Auto card ────────────────────────────────────────────────
   autoCardWrap: { flex: 1, borderRadius: radius.md, overflow: 'hidden', ...shadow.md },
-  autoCard:     { flex: 1, padding: 20, justifyContent: 'space-between' },
+  autoCard:     { flex: 1, padding: 16, alignItems: 'center', justifyContent: 'center', gap: 8 },
 
-  cardIcon:   { fontSize: 28, marginBottom: 8 },
-  cardMiddle: { flex: 1, justifyContent: 'flex-start' },
+  cardIcon: { fontSize: 26 },
 
-  // ✅ Dark card text — warm white explicit
-  cardTitleDark: { fontFamily: fonts.displayMedium, fontSize: 18, lineHeight: 22, marginBottom: 4, color: '#F2EDE8' },
-  cardSubDark:   { fontFamily: fonts.body, fontSize: 11, lineHeight: 15, color: 'rgba(242,237,232,0.50)' },
-
-  // ✅ Light card text — explicit for gradient card
-  cardTitleLight: { fontFamily: fonts.displayMedium, fontSize: 18, lineHeight: 22, marginBottom: 4, color: '#F2EDE8' },
-  cardSubLight:   { fontFamily: fonts.body, fontSize: 11, lineHeight: 15, color: 'rgba(242,237,232,0.60)' },
+  // ✅ Centered text — no more left-align or overlap
+  cardTitleDark:  { fontFamily: fonts.displayMedium, fontSize: 17, lineHeight: 21, color: '#F2EDE8', textAlign: 'center' },
+  cardSubDark:    { fontFamily: fonts.body, fontSize: 11, lineHeight: 15, color: 'rgba(242,237,232,0.50)', textAlign: 'center' },
+  cardTitleLight: { fontFamily: fonts.displayMedium, fontSize: 17, lineHeight: 21, color: '#F2EDE8', textAlign: 'center' },
+  cardSubLight:   { fontFamily: fonts.body, fontSize: 11, lineHeight: 15, color: 'rgba(242,237,232,0.60)', textAlign: 'center' },
 
   // Badges
   badgeMuted:     { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', backgroundColor: colors.gray4 },
@@ -336,10 +328,9 @@ const styles = StyleSheet.create({
   badgeGold:      { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', backgroundColor: colors.gold },
   badgeGoldText:  { fontFamily: fonts.bodySemiBold, fontSize: 9, letterSpacing: 0.8, color: '#12101C' },
 
-  // ── Surprise Me ─────────────────────────────────────────────
-  surpriseBtn:   { borderRadius: radius.md, overflow: 'hidden', ...shadow.sm },
-  surpriseInner: { paddingVertical: 18, paddingHorizontal: 20, alignItems: 'center' },
-  surpriseBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gold },
+  surpriseBtn:     { borderRadius: radius.md, overflow: 'hidden', ...shadow.sm },
+  surpriseInner:   { paddingVertical: 20, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
+  surpriseBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gold, textAlign: 'center' },
 
   // ── Tab bar ─────────────────────────────────────────────────
   tabBar:  { flexDirection: 'row', backgroundColor: colors.cream2, borderTopWidth: 1, borderTopColor: colors.gray4, height: 80, paddingBottom: 14, paddingTop: 4 },
