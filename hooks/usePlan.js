@@ -3,20 +3,17 @@ import { SAMPLE_SAVED_PLANS, PLAN_DATA } from '../data';
 
 const PlanContext = createContext(null);
 
-// ─── Helper: pick a random item from an array ───────────────
 function pickRandom(arr) {
   if (!arr || arr.length === 0) return null;
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ─── Helper: get budget key from plan.budget ────────────────
 function getBudgetKey(budget) {
   if (budget === '$') return '$';
   if (budget === '$$$') return '$$$';
-  return '$$'; // default
+  return '$$';
 }
 
-// ─── Helper: get addon key from time ────────────────────────
 function getAddonKey(hr) {
   if (hr < 12) return 'scenic';
   if (hr < 15) return 'dessert';
@@ -60,28 +57,17 @@ export function PlanProvider({ children }) {
       addonItem: null,
     });
 
-  // ─── Smart Plan Generation ─────────────────────────────────
-  // Uses vibe + budget to pull from the right data bucket
-  // Then randomly selects from available options for variety
   const generatePlan = (vibe, budget, time) => {
     const budgetKey = getBudgetKey(budget);
     const hr = time ? parseInt(time.split(':')[0]) : 17;
     const addonKey = getAddonKey(hr);
-
     const vibeData = PLAN_DATA[vibe]?.[budgetKey];
     if (!vibeData) return null;
-
     const activity = pickRandom(vibeData.activities);
     const food = pickRandom(vibeData.restaurants);
     const addonItems = vibeData.addons.filter(a => a.type === addonKey);
     const addonItem = pickRandom(addonItems) || pickRandom(vibeData.addons);
-
-    return {
-      activity,
-      food,
-      addonType: addonItem?.type || addonKey,
-      addonItem,
-    };
+    return { activity, food, addonType: addonItem?.type || addonKey, addonItem };
   };
 
   // ─── Save Plan ─────────────────────────────────────────────
@@ -91,49 +77,54 @@ export function PlanProvider({ children }) {
       plan.addonType === 'dessert' ? '🍰' : '🌅';
 
     const items = [
-      plan.activity ? `🎯 ${plan.activity.name}` : null,
-      plan.food ? `🍽️ ${plan.food.name}` : null,
+      plan.activity  ? `🎯 ${plan.activity.name}`  : null,
+      plan.food      ? `🍽️ ${plan.food.name}`      : null,
       plan.addonItem ? `${addonEmoji} ${plan.addonItem.name}` : null,
     ].filter(Boolean);
 
-    const newPlan = {
-      id: `sp_${Date.now()}`,
-      title: (() => {
-  const titles = {
-    Romantic: 'Romantic Evening Escape 🌙💖',
-    Adventure: 'Epic Adventure Date 🏔️⚡',
-    Chill: 'Chill & Cozy Date Night 🕯️🍷',
-    Fun: 'Playful Night Out 🎳✨',
-    Custom: 'A Night to Remember 🌟💕',
-  };
-  return titles[plan.vibe] || 'A Night to Remember 🌟💕';
-})(),
-      dateDisplay: plan.dateDisplay || 'Upcoming',
-      city: plan.city,
-      vibe: plan.vibe || 'Custom',
-      budget: plan.budget || '$$',
-      items,
-      favorite: false,
+    const titles = {
+      Romantic:  'Romantic Evening Escape 🌙💖',
+      Adventure: 'Epic Adventure Date 🏔️⚡',
+      Chill:     'Chill & Cozy Date Night 🕯️🍷',
+      Fun:       'Playful Night Out 🎳✨',
+      Custom:    'A Night to Remember 🌟💕',
     };
+
+    const newPlan = {
+      id:          `sp_${Date.now()}`,
+      title:       titles[plan.vibe] || 'A Night to Remember 🌟💕',
+      date:        plan.date        || '',    // ✅ raw ISO date for past/upcoming split
+      dateDisplay: plan.dateDisplay || 'Upcoming',
+      city:        plan.city,
+      vibe:        plan.vibe   || 'Custom',
+      budget:      plan.budget || '$$',
+      items,
+      favorite:    false,
+      // ── Memory fields (filled in by user after the date) ──
+      note:            '',    // user's written memory
+      rating:          0,     // 1–5 stars
+      favoriteMoment:  '',    // one of plan.items the user picks
+    };
+
     setSavedPlans((prev) => [newPlan, ...prev]);
     return newPlan;
   };
 
   const deletePlan = (id) => {
-  console.log('Deleting plan with id:', id);
-  setSavedPlans((prev) => {
-    const updated = prev.filter((p) => p.id !== id);
-    console.log('Updated plans:', updated.length);
-    return updated;
-  });
-};
+    setSavedPlans((prev) => prev.filter((p) => p.id !== id));
+  };
 
   const toggleFavorite = (id) =>
     setSavedPlans((prev) =>
       prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p))
     );
 
-  // ─── Time of Day Label ─────────────────────────────────────
+  // ─── Update memory fields (note / rating / favoriteMoment) ─
+  const updatePlanMeta = (id, updates) =>
+    setSavedPlans((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
+    );
+
   const getTimeLabel = () => {
     if (!plan.time) return null;
     const hr = parseInt(plan.time.split(':')[0]);
@@ -143,7 +134,6 @@ export function PlanProvider({ children }) {
     return { icon: '🌙', msg: 'Night out — expect great vibes and unforgettable moments.' };
   };
 
-  // ─── Time Formatters ───────────────────────────────────────
   const fmtHM = (h, m = 0) => {
     h = h % 24;
     const isPM = h >= 12;
@@ -151,11 +141,8 @@ export function PlanProvider({ children }) {
     return `${display}:${String(m).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
   };
 
-  const getBaseHour = () =>
-    plan.time ? parseInt(plan.time.split(':')[0]) : 17;
-
-  const getBaseMin = () =>
-    plan.time ? parseInt(plan.time.split(':')[1]) : 0;
+  const getBaseHour = () => plan.time ? parseInt(plan.time.split(':')[0]) : 17;
+  const getBaseMin  = () => plan.time ? parseInt(plan.time.split(':')[1]) : 0;
 
   return (
     <PlanContext.Provider
@@ -167,6 +154,7 @@ export function PlanProvider({ children }) {
         savePlan,
         deletePlan,
         toggleFavorite,
+        updatePlanMeta,   // ✅ new
         generatePlan,
         getTimeLabel,
         fmtHM,

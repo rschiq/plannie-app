@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform, Image, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -81,23 +81,297 @@ function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
   );
 }
 
-// ─── Swap Sheet ──────────────────────────────────────────────
-function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
-  const [items, setItems]     = useState([]);
+// ─── Helpers ─────────────────────────────────────────────────
+const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+
+// Readable type labels from raw Google types
+const TYPE_MAP = {
+  escape_room:        'Escape Room',
+  amusement_park:     'Amusement Park',
+  bowling_alley:      'Bowling Alley',
+  movie_theater:      'Cinema',
+  night_club:         'Night Club',
+  bar:                'Bar & Lounge',
+  restaurant:         'Restaurant',
+  cafe:               'Café',
+  park:               'Park',
+  museum:             'Museum',
+  art_gallery:        'Art Gallery',
+  gym:                'Gym',
+  spa:                'Spa',
+  shopping_mall:      'Shopping Mall',
+  tourist_attraction: 'Attraction',
+  point_of_interest:  'Local Spot',
+  bakery:             'Bakery',
+  florist:            'Flower Shop',
+  lodging:            'Hotel',
+  stadium:            'Stadium',
+  aquarium:           'Aquarium',
+  zoo:                'Zoo',
+  casino:             'Casino',
+};
+
+function getReadableType(types = []) {
+  for (const t of types) {
+    if (TYPE_MAP[t]) return TYPE_MAP[t];
+  }
+  return 'Place';
+}
+
+// Extract a clean neighborhood or city name from a vicinity/address string.
+// Priority: sublocality → neighborhood → city → fallback last 2 segments
+// Examples:
+//   "10250 Santa Monica Blvd, Century City, Los Angeles" → "Century City"
+//   "5517 Santa Monica Blvd, Hollywood, Los Angeles"     → "Hollywood"
+//   "3341 S La Cienega Blvd, Los Angeles, CA 90016"      → "Los Angeles"
+//   "123 Main St, Seattle, WA, USA"                      → "Seattle"
+function shortenVicinity(vicinity = '') {
+  if (!vicinity) return '';
+
+  const parts = vicinity.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+
+  // Skip the first part if it looks like a street address
+  // (starts with a number, or contains common street words)
+  const streetPattern = /^\d+\s|^([\d]+\s)|(blvd|ave|st|rd|dr|ln|way|pkwy|fwy|hwy)/i;
+
+  const meaningful = parts.filter((p, i) => {
+    // Skip state abbreviations (e.g. "CA", "WA", "NY")
+    if (/^[A-Z]{2}$/.test(p)) return false;
+    // Skip US ZIP codes
+    if (/^\d{5}(-\d{4})?$/.test(p)) return false;
+    // Skip country names
+    if (/^(USA|United States|US)$/i.test(p)) return false;
+    // Skip first part if it's a street address
+    if (i === 0 && streetPattern.test(p)) return false;
+    return true;
+  });
+
+  // Return first meaningful part (neighborhood/city)
+  if (meaningful.length > 0) return meaningful[0];
+
+  // Fallback: last 2 non-junk segments joined
+  return parts.slice(-2).join(', ');
+}
+
+function calcDistMiles(from, to) {
+  if (!from || !to) return null;
+  const R = 3958.8;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((from.lat * Math.PI) / 180) *
+    Math.cos((to.lat  * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
+}
+
+// ─── Place Detail Sheet ───────────────────────────────────────
+// Shows full details of a swap candidate before confirming
+function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose }) {
+  const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !place?.id) return;
+    setDetails(null);
+    fetchDetails(place.id);
+  }, [visible, place?.id]);
+
+  async function fetchDetails(placeId) {
+    setLoading(true);
+    try {
+      const fields = 'name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos';
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${GOOGLE_API_KEY}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (data.result) setDetails(data.result);
+    } catch (e) {
+      console.log('[PlaceDetail] fetch error:', e.message);
+    }
+    setLoading(false);
+  }
+
+  function buildPhotoUrl(ref) {
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photoreference=${ref}&key=${GOOGLE_API_KEY}`;
+  }
+
+  function openWebsite() {
+    if (details?.website) Linking.openURL(details.website).catch(() => {});
+  }
+
+  function callPlace() {
+    if (details?.formatted_phone_number) {
+      const tel = 'tel:' + details.formatted_phone_number.replace(/\s/g, '');
+      Linking.openURL(tel).catch(() => {});
+    }
+  }
+
+  function openInMaps() {
+    if (place?.location?.lat) {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${place.location.lat},${place.location.lng}`);
+    } else {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place?.name || '')}`);
+    }
+  }
+
+  if (!place) return null;
+
+  const photos = details?.photos || [];
+  const hasPhone   = !!details?.formatted_phone_number;
+  const hasWebsite = !!details?.website;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={[styles.sheet, { maxHeight: '90%', padding: 0, overflow: 'hidden' }]}>
+
+          {/* ── Photos ── */}
+          {photos.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={detail.photoScroll}
+              pagingEnabled
+            >
+              {photos.slice(0, 5).map((ph, i) => (
+                <Image
+                  key={i}
+                  source={{ uri: buildPhotoUrl(ph.photo_reference) }}
+                  style={detail.photo}
+                  resizeMode="cover"
+                />
+              ))}
+            </ScrollView>
+          )}
+
+          {/* No photo placeholder */}
+          {photos.length === 0 && !loading && (
+            <View style={detail.photoPlaceholder}>
+              <Text style={detail.photoPlaceholderIcon}>📍</Text>
+            </View>
+          )}
+
+          <ScrollView style={{ padding: 24 }} showsVerticalScrollIndicator={false}>
+            {/* Handle */}
+            <View style={[styles.sheetHandle, { alignSelf: 'center', marginBottom: 16 }]} />
+
+            {loading ? (
+              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={colors.rose} />
+                <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginTop: 10 }}>
+                  Loading details…
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Name + type */}
+                <Text style={detail.name}>{place.name}</Text>
+                <Text style={detail.type}>{place.category}</Text>
+
+                {/* Rating row */}
+                <View style={detail.ratingRow}>
+                  <Text style={detail.rating}>⭐ {place.rating}</Text>
+                  {place.totalRatings > 0 && (
+                    <Text style={detail.reviewCount}>
+                      ({place.totalRatings.toLocaleString()} reviews)
+                    </Text>
+                  )}
+                  {place.dist && (
+                    <Text style={detail.dist}>🚗 {place.dist} mi</Text>
+                  )}
+                </View>
+
+                {/* Address */}
+                {(details?.formatted_address || place.vicinity) && (
+                  <View style={detail.row}>
+                    <Text style={detail.rowIcon}>📍</Text>
+                    <Text style={detail.rowText}>
+                      {details?.formatted_address || place.vicinity}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Phone */}
+                {hasPhone && (
+                  <TouchableOpacity style={detail.row} onPress={callPlace} activeOpacity={0.8}>
+                    <Text style={detail.rowIcon}>📞</Text>
+                    <Text style={[detail.rowText, detail.rowLink]}>
+                      {details.formatted_phone_number}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Website */}
+                {hasWebsite && (
+                  <TouchableOpacity style={detail.row} onPress={openWebsite} activeOpacity={0.8}>
+                    <Text style={detail.rowIcon}>🌐</Text>
+                    <Text style={[detail.rowText, detail.rowLink]} numberOfLines={1}>
+                      {details.website.replace(/^https?:\/\/(www\.)?/, '')}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={detail.divider} />
+
+                {/* Action buttons */}
+                <TouchableOpacity style={detail.primaryBtn} onPress={onConfirm} activeOpacity={0.88}>
+                  <Text style={detail.primaryBtnText}>
+                    ✓ Select this {swapKey === 'food' ? 'restaurant' : 'activity'}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={detail.secondaryRow}>
+                  <TouchableOpacity style={detail.secondaryBtn} onPress={openInMaps} activeOpacity={0.8}>
+                    <Text style={detail.secondaryBtnText}>🗺️ Open in Maps</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={detail.secondaryBtn} onPress={onClose} activeOpacity={0.8}>
+                    <Text style={detail.secondaryBtnText}>✕ Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            <View style={{ height: 16 }} />
+          </ScrollView>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Swap Sheet ───────────────────────────────────────────────
+// Single Modal with two views: list → detail (no nested Modals)
+function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
+  const [items, setItems]       = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [preview, setPreview]   = useState(null);   // place being previewed
+  const [details, setDetails]   = useState(null);   // fetched place details
+  const [detailLoading, setDetailLoading] = useState(false);
+
   const VIBE_MAP = { Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure' };
 
   useEffect(() => {
     if (!visible || !swapKey) return;
+    setItems([]);
+    setPreview(null);
+    setDetails(null);
     fetchSwapItems();
   }, [visible, swapKey]);
+
+  // Fetch details whenever a place is previewed
+  useEffect(() => {
+    if (!preview?.id) { setDetails(null); return; }
+    fetchPlaceDetails(preview.id);
+  }, [preview?.id]);
 
   async function fetchSwapItems() {
     setLoading(true);
     try {
       const city = plan.city || 'Los Angeles';
       const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-        'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+        'address=' + encodeURIComponent(city) + '&key=' + GOOGLE_API_KEY;
       const geoRes  = await fetch(geoUrl);
       const geoData = await geoRes.json();
 
@@ -114,65 +388,104 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
           const results = await Promise.all(types.map(async (t) => {
             const o = addonOverride[t];
             const url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
-              'location=' + lat + ',' + lng + '&radius=8000&type=' + o.type +
-              '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+              'location=' + lat + ',' + lng + '&radius=20000&type=' + o.type +
+              '&keyword=' + encodeURIComponent(o.keyword) + '&key=' + GOOGLE_API_KEY;
             const res  = await fetch(url);
             const data = await res.json();
             const p    = data.results?.[0];
-            if (!p) return { ...ADDONS[t][0], _addonType: t };
+            if (!p) return null;
+            const placeLocation = p.geometry?.location
+              ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng } : null;
             return {
-              id: p.place_id, name: p.name, type: t,
-              note: p.opening_hours?.open_now ? 'Open now' : 'Nearby',
-              rating: p.rating ? parseFloat(p.rating).toFixed(1) : '4.0',
-              dist: '', tag: p.rating >= 4.5 ? 'Highly rated' : 'Nearby',
+              id: p.place_id, name: p.name,
+              category: t === 'flowers' ? 'Flower Shop' : t === 'dessert' ? 'Dessert' : 'Scenic Spot',
+              rating: p.rating ? parseFloat(p.rating).toFixed(1) : null,
+              totalRatings: p.user_ratings_total || 0,
+              vicinity: p.vicinity || '', location: placeLocation,
+              dist: calcDistMiles({ lat, lng }, placeLocation),
+              photoUrl: p.photos?.[0]?.photo_reference
+                ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=120&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+                : null,
               _addonType: t,
             };
           }));
-          setItems(results);
+          setItems(results.filter(Boolean));
           setLoading(false);
           return;
         }
 
         const vibe      = VIBE_MAP[plan.vibe] || 'romantic';
         const fetchVibe = swapKey === 'food' ? 'foodie' : vibe;
-        const places    = await getPlacesByVibe(fetchVibe, { lat, lng }, { radius: 8000, maxResults: 15 });
+        const searchRadius = fetchVibe === 'adventure' ? 20000 : 8000;
+        const places    = await getPlacesByVibe(fetchVibe, { lat, lng }, { radius: searchRadius, maxResults: 15 });
 
         const filtered = places
           .filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id)
-          .filter((p) => (p.rating || 0) >= 4.0 && (p.totalRatings || 0) >= 50)
+          .filter((p) => (p.rating || 0) >= 4.0 && (p.totalRatings || 0) >= 30)
           .sort((a, b) => {
             const scoreA = (a.rating || 0) * Math.log(Math.max(a.totalRatings || 1, 1));
             const scoreB = (b.rating || 0) * Math.log(Math.max(b.totalRatings || 1, 1));
             return scoreB - scoreA;
-          })
-          .slice(0, 10);
+          }).slice(0, 10);
 
         const finalList = filtered.length > 0
           ? filtered
           : places.filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id).slice(0, 5);
 
-        const mapped = finalList.map((p) => ({
+        setItems(finalList.map((p) => ({
           id: p.id, name: p.name,
-          type: p.types?.[0]?.replace(/_/g, ' ') || 'Place',
-          cuisine: p.types?.[0]?.replace(/_/g, ' ') || 'Restaurant',
-          note: p.isOpenNow === true ? 'Open now' : 'Nearby',
-          rating: p.rating ? parseFloat(p.rating).toFixed(1) : '4.0',
-          dist: '', tag: p.rating >= 4.5 ? 'Highly rated' : 'Nearby',
-        }));
-        setItems(mapped);
+          category: getReadableType(p.types || []),
+          rating: p.rating ? parseFloat(p.rating).toFixed(1) : null,
+          totalRatings: p.totalRatings || 0,
+          isOpenNow: p.isOpenNow ?? null,
+          vicinity: shortenVicinity(p.address),
+          fullVicinity: p.address || '',
+          location: p.location || null,
+          dist: calcDistMiles({ lat, lng }, p.location),
+          photoUrl: p.photoUrl || null,
+        })));
       }
     } catch (e) {
-      const vibe     = plan.vibe || 'Romantic';
-      const fallback = swapKey === 'activity'
-        ? (ACTIVITIES[vibe] || []).filter((a) => a.id !== plan.activity?.id).slice(0, 3)
-        : swapKey === 'food'
-        ? (RESTAURANTS[vibe] || []).filter((r) => r.id !== plan.food?.id).slice(0, 3)
-        : ['flowers', 'dessert', 'scenic']
-            .filter((t) => t !== plan.addonType)
-            .map((t) => ({ ...ADDONS[t][0], _addonType: t }));
-      setItems(fallback);
+      console.log('[SwapSheet] error:', e.message);
+      setItems([]);
     }
     setLoading(false);
+  }
+
+  async function fetchPlaceDetails(placeId) {
+    setDetailLoading(true);
+    try {
+      const fields = 'name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos';
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${GOOGLE_API_KEY}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (data.result) setDetails(data.result);
+    } catch (e) { console.log('[PlaceDetail] fetch error:', e.message); }
+    setDetailLoading(false);
+  }
+
+  function buildPhotoUrl(ref) {
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photoreference=${ref}&key=${GOOGLE_API_KEY}`;
+  }
+
+  function handleConfirmSwap() {
+    if (!preview) return;
+    onSwap(swapKey, {
+      ...preview,
+      type: preview.category, cuisine: preview.category,
+      note: preview.isOpenNow ? 'Open now' : 'Nearby',
+      tag:  (preview.rating >= 4.5) ? 'Highly rated' : 'Nearby',
+    });
+    setPreview(null);
+    onClose();
+  }
+
+  function openInMaps() {
+    if (preview?.location?.lat) {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${preview.location.lat},${preview.location.lng}`);
+    } else {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(preview?.name || '')}`);
+    }
   }
 
   if (!swapKey) return null;
@@ -180,48 +493,194 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
               : swapKey === 'food'     ? 'Swap Restaurant'
               :                          'Swap Add-On';
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={[styles.sheet, { maxHeight: '80%' }]}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetName}>{title}</Text>
-          <Text style={styles.sheetSub}>Choose a different option nearby</Text>
+  const photos     = details?.photos || [];
+  const hasPhone   = !!details?.formatted_phone_number;
+  const hasWebsite = !!details?.website;
 
-          {loading ? (
-            <View style={{ paddingVertical: 32, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={colors.rose} />
-              <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginTop: 10 }}>
-                Finding alternatives…
-              </Text>
+  return (
+    // ✅ Single Modal — Pressable backdrop + plain View sheet
+    // This cleanly separates backdrop tap (close) from sheet content (card taps)
+    // No nested TouchableOpacity = no gesture conflicts
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => {
+      if (preview) { setPreview(null); setDetails(null); }
+      else onClose();
+    }}>
+      {/* Backdrop — catches taps outside the sheet */}
+      <Pressable
+        style={sw.backdrop}
+        onPress={() => {
+          if (preview) { setPreview(null); setDetails(null); }
+          else onClose();
+        }}
+      />
+
+      {/* Sheet — plain View, no TouchableOpacity, so inner taps work */}
+      <View style={sw.sheet}>
+
+          {/* ── VIEW 1: List ── */}
+          {!preview && (
+            <View style={{ padding: 24, flex: 1 }}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetName}>{title}</Text>
+              <Text style={styles.sheetSub}>Tap a place to preview before swapping</Text>
+
+              {loading ? (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.rose} />
+                  <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginTop: 10 }}>
+                    Finding alternatives…
+                  </Text>
+                </View>
+              ) : items.length === 0 ? (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, marginBottom: 12 }}>😅</Text>
+                  <Text style={{ fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.charcoal }}>
+                    No alternatives found nearby
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {items.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={swap.card}
+                      onPress={() => setPreview(item)}
+                      activeOpacity={0.85}
+                    >
+                      {item.photoUrl ? (
+                        <Image source={{ uri: item.photoUrl }} style={swap.thumb} resizeMode="cover" />
+                      ) : (
+                        <View style={swap.thumbPlaceholder}>
+                          <Text style={swap.thumbIcon}>📍</Text>
+                        </View>
+                      )}
+                      <View style={swap.info}>
+                        <Text style={swap.name} numberOfLines={1}>{item.name}</Text>
+                        <Text style={swap.category}>{item.category}</Text>
+                        {item.rating && (
+                          <View style={swap.metaRow}>
+                            <Text style={swap.rating}>⭐ {item.rating}</Text>
+                            {item.totalRatings > 0 && (
+                              <Text style={swap.reviews}>({item.totalRatings.toLocaleString()})</Text>
+                            )}
+                          </View>
+                        )}
+                        <View style={swap.locationRow}>
+                          {item.vicinity ? <Text style={swap.location} numberOfLines={1}>📍 {item.vicinity}</Text> : null}
+                          {item.dist ? <Text style={swap.dist}>🚗 {item.dist} mi</Text> : null}
+                        </View>
+                      </View>
+                      <Text style={swap.arrow}>›</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-              {items.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.swapCard}
-                  onPress={() => onSwap(swapKey, item)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.swapCardInner}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.swapCardTitle}>{item.name}</Text>
-                      <Text style={styles.swapCardSub}>{item.type || item.cuisine || item.note}</Text>
-                      <Text style={styles.swapRating}>★ {item.rating}</Text>
-                    </View>
-                    <Text style={styles.swapArrow}>›</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           )}
 
-          <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
+          {/* ── VIEW 2: Detail ── */}
+          {preview && (
+            <>
+              {/* Photos */}
+              {photos.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={detail.photoScroll} pagingEnabled>
+                  {photos.slice(0, 5).map((ph, i) => (
+                    <Image key={i} source={{ uri: buildPhotoUrl(ph.photo_reference) }} style={detail.photo} resizeMode="cover" />
+                  ))}
+                </ScrollView>
+              )}
+              {photos.length === 0 && !detailLoading && (
+                <View style={detail.photoPlaceholder}>
+                  <Text style={detail.photoPlaceholderIcon}>📍</Text>
+                </View>
+              )}
+
+              <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+                {/* Back button + handle */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => { setPreview(null); setDetails(null); }}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  >
+                    <Text style={{ fontSize: 18, color: colors.rose }}>←</Text>
+                    <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.rose }}>
+                      Back to list
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {detailLoading ? (
+                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={colors.rose} />
+                    <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginTop: 10 }}>
+                      Loading details…
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={detail.name}>{preview.name}</Text>
+                    <Text style={detail.type}>{preview.category}</Text>
+
+                    <View style={detail.ratingRow}>
+                      <Text style={detail.rating}>⭐ {preview.rating}</Text>
+                      {preview.totalRatings > 0 && (
+                        <Text style={detail.reviewCount}>({preview.totalRatings.toLocaleString()} reviews)</Text>
+                      )}
+                      {preview.dist && <Text style={detail.dist}>🚗 {preview.dist} mi</Text>}
+                    </View>
+
+                    {(details?.formatted_address || preview.fullVicinity) && (
+                      <View style={detail.row}>
+                        <Text style={detail.rowIcon}>📍</Text>
+                        <Text style={detail.rowText}>{details?.formatted_address || preview.fullVicinity}</Text>
+                      </View>
+                    )}
+
+                    {hasPhone && (
+                      <TouchableOpacity style={detail.row} onPress={() => Linking.openURL('tel:' + details.formatted_phone_number.replace(/\s/g, ''))} activeOpacity={0.8}>
+                        <Text style={detail.rowIcon}>📞</Text>
+                        <Text style={[detail.rowText, detail.rowLink]}>{details.formatted_phone_number}</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {hasWebsite && (
+                      <TouchableOpacity style={detail.row} onPress={() => Linking.openURL(details.website)} activeOpacity={0.8}>
+                        <Text style={detail.rowIcon}>🌐</Text>
+                        <Text style={[detail.rowText, detail.rowLink]} numberOfLines={1}>
+                          {details.website.replace(/^https?:\/\/(www\.)?/, '')}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <View style={detail.divider} />
+
+                    <TouchableOpacity style={detail.primaryBtn} onPress={handleConfirmSwap} activeOpacity={0.88}>
+                      <Text style={detail.primaryBtnText}>
+                        ✓ Select this {swapKey === 'food' ? 'restaurant' : 'activity'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View style={detail.secondaryRow}>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={openInMaps} activeOpacity={0.8}>
+                        <Text style={detail.secondaryBtnText}>🗺️ Open in Maps</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={onClose} activeOpacity={0.8}>
+                        <Text style={detail.secondaryBtnText}>✕ Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+                <View style={{ height: 32 }} />
+              </ScrollView>
+            </>
+          )}
+
+        </View>
     </Modal>
   );
 }
@@ -563,7 +1022,6 @@ const styles = StyleSheet.create({
   specialInput: { backgroundColor: colors.cream2, borderRadius: radius.sm, paddingHorizontal: 16, paddingVertical: 12, fontFamily: fonts.body, fontSize: 14, color: colors.charcoal, borderWidth: 1.5, borderColor: colors.rose },
 
   // ── Sheets ──────────────────────────────────────────────────
-  // ✅ Overlay — dark purple rgba, NOT warm brown rgba(44,37,32,0.6)
   overlay:     { flex: 1, backgroundColor: 'rgba(8,6,14,0.80)', justifyContent: 'flex-end' },
   sheet:       { backgroundColor: colors.cream2, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingTop: 24, paddingHorizontal: 24, paddingBottom: 40, maxHeight: '85%' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginBottom: 20 },
@@ -572,15 +1030,7 @@ const styles = StyleSheet.create({
   cancelBtn:   { marginTop: 16, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray4, borderRadius: 999 },
   cancelBtnText:{ fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gray2 },
 
-  // ── Swap card ───────────────────────────────────────────────
-  swapCard:      { backgroundColor: colors.cream3, borderRadius: radius.sm, marginBottom: 10 },
-  swapCardInner: { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  swapCardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal },
-  swapCardSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginTop: 2 },
-  swapRating:    { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold, marginTop: 4 },
-  swapArrow:     { fontSize: 20, color: colors.gray2 },
-
-  // ── Detail modal ────────────────────────────────────────────
+  // Detail modal
   detailName:       { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, marginBottom: 4 },
   detailCategory:   { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 10 },
   detailRatingRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
@@ -590,8 +1040,77 @@ const styles = StyleSheet.create({
   detailAddressIcon:{ fontSize: 14, marginTop: 2 },
   detailAddress:    { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 20 },
   detailDivider:    { height: 1, backgroundColor: colors.gray4, marginVertical: 16 },
-
-  // ✅ detailRow — was referenced but never defined (caused silent layout bug)
   detailRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   detailIcon: { fontSize: 14 },
+});
+
+// ── Pressable backdrop + positioned sheet ───────────────────
+const sw = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,6,14,0.80)',
+  },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: '90%',
+    backgroundColor: colors.cream2,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    overflow: 'hidden',
+  },
+});
+
+// ── Rich swap card styles ────────────────────────────────────
+const swap = StyleSheet.create({
+  card: {
+    backgroundColor: colors.cream3,
+    borderRadius: radius.sm,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.gray4,
+  },
+  thumb: { width: 72, height: 72, borderRadius: 10, backgroundColor: colors.gray4, flexShrink: 0 },
+  thumbPlaceholder: { width: 72, height: 72, borderRadius: 10, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  thumbIcon:   { fontSize: 24 },
+  info:        { flex: 1, gap: 2 },
+  name:        { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.charcoal, lineHeight: 18 },
+  category:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray2 },
+  metaRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  rating:      { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold },
+  reviews:     { fontFamily: fonts.body, fontSize: 11, color: colors.gray2 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' },
+  location:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, flex: 1 },
+  dist:        { fontFamily: fonts.body, fontSize: 11, color: colors.gray2 },
+  arrow:       { fontSize: 20, color: colors.gray3, flexShrink: 0 },
+});
+
+// ── Place detail sheet styles ────────────────────────────────
+const detail = StyleSheet.create({
+  photoScroll:      { height: 220 },
+  photo:            { width: 300, height: 220 },
+  photoPlaceholder: { height: 160, backgroundColor: colors.cream3, alignItems: 'center', justifyContent: 'center' },
+  photoPlaceholderIcon: { fontSize: 40 },
+  name:        { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, marginBottom: 4 },
+  type:        { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 10 },
+  ratingRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  rating:      { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.gold },
+  reviewCount: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2 },
+  dist:        { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginLeft: 'auto' },
+  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  rowIcon:     { fontSize: 15, marginTop: 1, width: 20 },
+  rowText:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 20 },
+  rowLink:     { color: colors.rose },
+  divider:     { height: 1, backgroundColor: colors.gray4, marginVertical: 18 },
+  primaryBtn:  { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
+  primaryBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: '#F2EDE8', letterSpacing: 0.2 },
+  secondaryRow:   { flexDirection: 'row', gap: 8 },
+  secondaryBtn:   { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, paddingVertical: 13, alignItems: 'center' },
+  secondaryBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
 });

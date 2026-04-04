@@ -74,17 +74,30 @@ export default function ProfileScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Text style={styles.premTitle}>Plannie Premium ✦</Text>
+          {/* ✦ Subtle sparkle badge */}
+          <View style={styles.premBadge}>
+            <Text style={styles.premBadgeText}>✦ PLANNIE PREMIUM</Text>
+          </View>
+
+          {/* Emotional headline — value over features */}
+          <Text style={styles.premTitle}>Never run out of{'\n'}date ideas again.</Text>
+
+          {/* Supporting line — feeling, not a feature list */}
           <Text style={styles.premSub}>
-            Unlimited plans, Surprise Date generator, anniversary reminders & premium ideas.
+            Keep things exciting, effortless,{'\n'}and unforgettable.
           </Text>
+
+          {/* High-converting CTA */}
           <TouchableOpacity
             style={styles.premBtn}
             onPress={() => Alert.alert('Coming Soon', 'Premium subscription coming soon!')}
             activeOpacity={0.88}
           >
-            <Text style={styles.premBtnText}>Upgrade — $4.99/mo</Text>
+            <Text style={styles.premBtnText}>Unlock Better Dates ✨</Text>
           </TouchableOpacity>
+
+          {/* Low-friction price anchor below button */}
+          <Text style={styles.premPrice}>$4.99 / month · Cancel anytime</Text>
         </LinearGradient>
 
         {/* ── Menu ── */}
@@ -191,9 +204,9 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
 
   // ── Hero ──────────────────────────────────────────────────
-  hero: { padding: 30, paddingTop: 35, paddingBottom: 30, alignItems: 'center' },
+  hero: { padding: 32, paddingTop: 48, paddingBottom: 32, alignItems: 'center' },
   avatar: {
-    width: 80, height: 60, borderRadius: 40,
+    width: 80, height: 80, borderRadius: 40,
     backgroundColor: 'rgba(201,169,110,0.20)',
     borderWidth: 1, borderColor: 'rgba(201,169,110,0.35)',
     justifyContent: 'center', alignItems: 'center',
@@ -205,13 +218,65 @@ const styles = StyleSheet.create({
   heroName: { fontFamily: fonts.display, fontSize: 28, color: '#F2EDE8' },
   heroSub:  { fontFamily: fonts.body, fontSize: 13, color: 'rgba(242,237,232,0.45)', marginTop: 4 },
 
-  // ── Premium banner — gold-to-rose-gold (kept exactly, looks great) ──
-  premBanner:   { margin: 20, borderRadius: radius.md, padding: 24 },
-  // Dark text on gold = luxury look, intentional
-  premTitle:    { fontFamily: fonts.display, fontSize: 26, color: '#1C1628', marginBottom: 8 },
-  premSub:      { fontFamily: fonts.body, fontSize: 13, color: 'rgba(28,22,40,0.75)', lineHeight: 20, marginBottom: 18 },
-  premBtn:      { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: radius.full, paddingVertical: 13, paddingHorizontal: 24, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
-  premBtnText:  { fontFamily: fonts.bodyMedium, fontSize: 14, color: '#1C1628' },
+  // ── Premium banner ─────────────────────────────────────────
+  premBanner:   { margin: 20, borderRadius: radius.md, padding: 24, gap: 0 },
+
+  // Small badge above headline
+  premBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(28,22,40,0.18)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 14,
+  },
+  premBadgeText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    color: '#1C1628',
+  },
+
+  // Emotional headline — larger, bolder
+  premTitle: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    lineHeight: 34,
+    color: '#1C1628',
+    marginBottom: 10,
+  },
+
+  // Supporting line — shorter, punchier
+  premSub: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: 'rgba(28,22,40,0.70)',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+
+  // Main CTA button — confident, not timid
+  premBtn: {
+    backgroundColor: '#1C1628',
+    borderRadius: radius.full,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  premBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: colors.gold,
+    letterSpacing: 0.2,
+  },
+
+  // Price anchor — small, below button, reduces friction
+  premPrice: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: 'rgba(28,22,40,0.50)',
+  },
 
   // ── Menu rows ─────────────────────────────────────────────
   section:      { paddingHorizontal: 20, marginTop: 4 },
