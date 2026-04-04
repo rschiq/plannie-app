@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
           {/* High-converting CTA */}
           <TouchableOpacity
             style={styles.premBtn}
-            onPress={() => Alert.alert('Coming Soon', 'Premium subscription coming soon!')}
+            onPress={() => router.push('/pro')}
             activeOpacity={0.88}
           >
             <Text style={styles.premBtnText}>Unlock Better Dates ✨</Text>
@@ -113,7 +113,7 @@ export default function ProfileScreen() {
           <ProfileRow
             icon="💍"
             title="Special Dates"
-            sub="Your most meaningful dates"
+            sub="Never miss your important dates"
             onPress={() => router.push('/profile/special-dates')}
           />
           <ProfileRow

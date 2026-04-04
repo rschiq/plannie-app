@@ -1,234 +1,272 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+// app/pro.js
+// ─────────────────────────────────────────────────────────────
+// Plannie Premium Upgrade Screen
+// Simulates payment — replace the onPress handler with Stripe
+// when ready. Sets isPremium = true via usePremium hook.
+// ─────────────────────────────────────────────────────────────
+import { useState, useRef } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, Alert, Animated,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, fonts, radius, shadow } from '../constants/theme';
+import { useRouter } from 'expo-router';
 import { usePremium } from '../hooks/usePremium';
+import { colors, fonts, radius } from '../constants/theme';
 
-const FEATURES = [
-  { icon: '🔔', title: 'Anniversary Reminders', sub: 'Never miss a special date' },
-  { icon: '🎲', title: 'Surprise Date Generator', sub: 'One tap, full plan' },
-  { icon: '🔗', title: 'Share a Plan', sub: 'Send your date plan to your partner' },
-  { icon: '💡', title: 'Unlimited Plans', sub: 'Save as many date plans as you want' },
-  { icon: '⭐', title: 'Premium Date Ideas', sub: 'Exclusive curated experiences' },
+const BENEFITS = [
+  { icon: '∞',  label: 'Unlimited date plans',           sub: 'No caps, no limits' },
+  { icon: '🎲', label: 'Surprise Date Generator',        sub: 'One tap, a full night planned' },
+  { icon: '💍', label: 'Special Dates',                 sub: 'Never miss your important dates' },
+  { icon: '✨', label: 'Premium date ideas',             sub: 'Curated for unforgettable nights' },
+  { icon: '🔄', label: 'Unlimited swaps',                sub: 'Swap until it\'s perfect' },
 ];
 
 export default function ProScreen() {
-  const { isPremium, setIsPremium } = usePremium();
+  const router   = useRouter();
+  const { setIsPremium } = usePremium();
+  const [loading, setLoading] = useState(false);
+
+  // Button press animation
+  const btnScale = useRef(new Animated.Value(1)).current;
+
+  function onPressIn() {
+    Animated.spring(btnScale, { toValue: 0.97, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
+  }
+  function onPressOut() {
+    Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 8 }).start();
+  }
+
+  async function handleUpgrade() {
+    setLoading(true);
+
+    // ── Simulated payment delay ──────────────────────────────
+    // Replace this block with your Stripe payment sheet call:
+    //   const { error } = await presentPaymentSheet();
+    await new Promise(resolve => setTimeout(resolve, 1400));
+
+    // ── Set premium ──────────────────────────────────────────
+    await setIsPremium(true);
+
+    setLoading(false);
+
+    Alert.alert(
+      "You're now Premium 🎉",
+      "Welcome to Plannie Premium. Enjoy unlimited dates, surprise generators, and more.",
+      [{
+        text: "Let's go!",
+        onPress: () => router.replace('/(tabs)/profile'),
+      }]
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-          <Text style={styles.backArrow}>‹</Text>
-        </TouchableOpacity>
-        <View style={{ width: 36 }} />
-      </View>
-
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 48 }}>
-
-        {/* Hero */}
-        <LinearGradient
-          colors={[colors.gold2, colors.blush2]}
-          style={styles.hero}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+      {/* ── Hero gradient header ── */}
+      <LinearGradient
+        colors={['#1C1628', '#241A38', '#1A1428']}
+        style={styles.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          activeOpacity={0.7}
         >
-          <Text style={styles.heroIcon}>✦</Text>
-          <Text style={styles.heroTitle}>Plannie Premium</Text>
-          <Text style={styles.heroSub}>
-            Plan better dates. Impress without the stress.
-          </Text>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
 
-          <Text style={[styles.heroSub, { marginTop: 8 }]}>
-            Unlock premium features and start planning better dates today.
-            </Text>
-          <View style={styles.pricePill}>
-            <Text style={styles.priceText}>$4.99 / month</Text>
-          </View>
-        </LinearGradient>
-
-        {/* Features List */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>What's Included</Text>
-          <View style={styles.featureCard}>
-            {FEATURES.map((f, idx) => (
-              <View
-                key={f.title}
-                style={[styles.featureRow, idx < FEATURES.length - 1 && styles.featureBorder]}
-              >
-                <Text style={styles.featureIcon}>{f.icon}</Text>
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>{f.title}</Text>
-                  <Text style={styles.featureSub}>{f.sub}</Text>
-                </View>
-                <Text style={styles.featureCheck}>✓</Text>
-              </View>
-            ))}
-          </View>
+        {/* Badge */}
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>✦ PLANNIE PREMIUM</Text>
         </View>
 
-        {/* CTA */}
-        <View style={styles.ctaSection}>
-  {isPremium ? (
-    <View style={styles.successBox}>
-      <Text style={styles.successIcon}>🎉</Text>
-      <Text style={styles.successTitle}>You're Premium!</Text>
-      <Text style={styles.successMsg}>All premium features are now unlocked.</Text>
-      <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.replace('/(tabs)')} activeOpacity={0.88}>
-        <Text style={styles.upgradeBtnText}>Continue</Text>
-      </TouchableOpacity>
-    </View>
-  ) : (
-    <>
-      <TouchableOpacity style={styles.upgradeBtn} activeOpacity={0.88} onPress={() => { setIsPremium(true); router.replace('/(tabs)'); }}>
-        <Text style={styles.upgradeBtnText}>Upgrade to Pro — $4.99/mo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.laterBtn} onPress={() => router.back()} activeOpacity={0.8}>
-        <Text style={styles.laterBtnText}>Maybe Later</Text>
-      </TouchableOpacity>
-      <Text style={styles.disclaimer}>
-        Cancel anytime. Billed monthly.
-      </Text>
-    </>
-  )}
-</View>
+        {/* Title */}
+        <Text style={styles.heroTitle}>Unlock Better{'\n'}Dates ✨</Text>
+        <Text style={styles.heroSub}>
+          Keep things exciting, effortless,{'\n'}and unforgettable.
+        </Text>
+      </LinearGradient>
 
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Benefits ── */}
+        <Text style={styles.sectionLabel}>Everything included</Text>
+
+        {BENEFITS.map((b, i) => (
+          <View key={i} style={styles.benefitRow}>
+            <View style={styles.benefitIcon}>
+              <Text style={styles.benefitIconText}>{b.icon}</Text>
+            </View>
+            <View style={styles.benefitText}>
+              <Text style={styles.benefitLabel}>{b.label}</Text>
+              <Text style={styles.benefitSub}>{b.sub}</Text>
+            </View>
+            <View style={styles.check}>
+              <Text style={styles.checkText}>✓</Text>
+            </View>
+          </View>
+        ))}
+
+        {/* ── Price card ── */}
+        <View style={styles.priceCard}>
+          <LinearGradient
+            colors={[colors.gold2, colors.blush2]}
+            style={styles.priceGrad}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Text style={styles.priceAmount}>$4.99</Text>
+            <Text style={styles.pricePer}>per month</Text>
+            <Text style={styles.priceNote}>Cancel anytime · No commitment</Text>
+          </LinearGradient>
+        </View>
+
+        {/* ── CTA ── */}
+        <TouchableOpacity
+          onPressIn={onPressIn}
+          onPressOut={onPressOut}
+          onPress={handleUpgrade}
+          activeOpacity={1}
+          disabled={loading}
+        >
+          <Animated.View
+            style={[
+              styles.ctaBtn,
+              loading && styles.ctaBtnLoading,
+              { transform: [{ scale: btnScale }] },
+            ]}
+          >
+            <Text style={styles.ctaBtnText}>
+              {loading ? 'Processing…' : 'Continue to Payment'}
+            </Text>
+          </Animated.View>
+        </TouchableOpacity>
+
+        <Text style={styles.legal}>
+          By continuing you agree to our Terms of Service.{'\n'}
+          Subscription renews monthly. Cancel anytime.
+        </Text>
+
+        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.cream },
+  safe:   { flex: 1, backgroundColor: colors.cream },
   scroll: { flex: 1 },
+  content:{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 40 },
 
-  header: {
-    backgroundColor: colors.cream,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.cream2,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  backArrow: {
-    fontSize: 26, color: colors.charcoal,
-    lineHeight: 30, marginLeft: 2,
-  },
+  // ── Hero ──────────────────────────────────────────────────
+  hero:    { paddingHorizontal: 28, paddingTop: 20, paddingBottom: 32 },
+  backBtn: { marginBottom: 20 },
+  backText:{ fontFamily: fonts.bodyMedium, fontSize: 14, color: 'rgba(242,237,232,0.55)' },
 
-  hero: {
-    margin: 20,
-    borderRadius: radius.md,
-    padding: 32,
-    alignItems: 'center',
+  badge:    {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(201,169,110,0.15)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 16,
   },
-  heroIcon: {
-    fontSize: 40, color: colors.white,
-    marginBottom: 12,
-  },
-  heroTitle: {
-    fontFamily: fonts.display, fontSize: 32,
-    color: colors.white, marginBottom: 10,
-  },
-  heroSub: {
-    fontFamily: fonts.body, fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center', lineHeight: 21,
-    marginBottom: 20,
-  },
-  pricePill: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: radius.full,
-    paddingHorizontal: 20, paddingVertical: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
-  },
-  priceText: {
-    fontFamily: fonts.bodyMedium, fontSize: 15,
-    color: colors.white,
-  },
+  badgeText:{ fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 1.2, color: colors.gold },
 
-  section: { paddingHorizontal: 20, marginBottom: 8 },
-  sectionLabel: {
-    fontFamily: fonts.bodySemiBold, fontSize: 10,
-    letterSpacing: 1.2, textTransform: 'uppercase',
-    color: colors.gray2, marginBottom: 12,
-  },
-  featureCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    ...shadow.sm,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14,
-    gap: 12,
-  },
-  featureBorder: {
-    borderBottomWidth: 1, borderBottomColor: colors.cream2,
-  },
-  featureIcon: { fontSize: 20, width: 28 },
-  featureContent: { flex: 1 },
-  featureTitle: {
-    fontFamily: fonts.bodyMedium, fontSize: 14,
-    color: colors.charcoal,
-  },
-  featureSub: {
-    fontFamily: fonts.body, fontSize: 11,
-    color: colors.gray2, marginTop: 2,
-  },
-  featureCheck: {
-    fontSize: 16, color: colors.gold2,
-    fontFamily: fonts.bodySemiBold,
-  },
-
-  ctaSection: { paddingHorizontal: 20, marginTop: 8 },
-  upgradeBtn: {
-    backgroundColor: colors.gold2,
-    borderRadius: radius.sm,
-    paddingVertical: 16,
-    alignItems: 'center',
+  heroTitle:{
+    fontFamily: fonts.display,
+    fontSize: 36,
+    color: '#F2EDE8',
+    lineHeight: 42,
     marginBottom: 10,
-    ...shadow.sm,
   },
-  upgradeBtnText: {
-    fontFamily: fonts.bodyMedium, fontSize: 16,
-    color: colors.white,
+  heroSub:  {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: 'rgba(242,237,232,0.55)',
+    lineHeight: 22,
   },
-  laterBtn: {
+
+  // ── Benefits ──────────────────────────────────────────────
+  sectionLabel:{
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.gray2,
+    marginBottom: 14,
+  },
+
+  benefitRow:{
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
     backgroundColor: colors.cream2,
     borderRadius: radius.sm,
-    paddingVertical: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.gray4,
+  },
+  benefitIcon:{
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.10)',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.18)',
   },
-  laterBtnText: {
-    fontFamily: fonts.bodyMedium, fontSize: 15,
-    color: colors.charcoal,
+  benefitIconText:{ fontSize: 18 },
+  benefitText:    { flex: 1 },
+  benefitLabel:   { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal, marginBottom: 2 },
+  benefitSub:     { fontFamily: fonts.body, fontSize: 11, color: colors.gray2 },
+  check:          { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(201,169,110,0.15)', alignItems: 'center', justifyContent: 'center' },
+  checkText:      { fontSize: 11, color: colors.gold, fontFamily: fonts.bodySemiBold },
+
+  // ── Price card ────────────────────────────────────────────
+  priceCard:{ borderRadius: radius.md, overflow: 'hidden', marginTop: 8, marginBottom: 20 },
+  priceGrad:{ padding: 24, alignItems: 'center' },
+  priceAmount:{ fontFamily: fonts.display, fontSize: 52, color: '#1C1628', lineHeight: 56 },
+  pricePer:   { fontFamily: fonts.body, fontSize: 15, color: 'rgba(28,22,40,0.65)', marginBottom: 6 },
+  priceNote:  { fontFamily: fonts.body, fontSize: 12, color: 'rgba(28,22,40,0.50)' },
+
+  // ── CTA button ────────────────────────────────────────────
+  ctaBtn:{
+    backgroundColor: colors.rose,
+    borderRadius: 999,
+    paddingVertical: 18,
+    alignItems: 'center',
+    shadowColor: colors.rose,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  disclaimer: {
-    fontFamily: fonts.body, fontSize: 12,
-    color: colors.gray3, textAlign: 'center',
+  ctaBtnLoading:{ opacity: 0.7 },
+  ctaBtnText:{
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: '#F2EDE8',
+    letterSpacing: 0.2,
   },
-  successBox: {
-  alignItems: 'center',
-  paddingVertical: 12,
-},
-successIcon: { fontSize: 48, marginBottom: 12 },
-successTitle: {
-  fontFamily: fonts.display, fontSize: 28,
-  color: colors.charcoal, marginBottom: 8,
-},
-successMsg: {
-  fontFamily: fonts.body, fontSize: 14,
-  color: colors.gray, textAlign: 'center',
-  lineHeight: 21, marginBottom: 24,
-},
+
+  // ── Legal ─────────────────────────────────────────────────
+  legal:{
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.gray3,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: 14,
+  },
 });
