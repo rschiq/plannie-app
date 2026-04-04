@@ -192,8 +192,8 @@ export default function AddonsScreen() {
               // ✅ Clean empty state — no fake data shown
               <View style={styles.emptyState}>
                 <Text style={styles.emptyEmoji}>😅</Text>
-                <Text style={styles.emptyText}>We couldn't find anything great here</Text>
-                <Text style={styles.emptySub}>Try another vibe — we've got better options.</Text>
+                <Text style={styles.emptyText}>We couldn't find anything worth your time</Text>
+                <Text style={styles.emptySub}>Try another vibe — we'll do better.</Text>
               </View>
             )}
           </>
@@ -215,7 +215,16 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
   row: { backgroundColor: colors.white, borderRadius: radius.sm, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent', ...shadow.sm },
-  rowSel: { borderColor: colors.rose, backgroundColor: '#FFF9F8' },
+  // ✅ Dark elevated + rose gold border — was '#FFF9F8' light pink
+  rowSel: {
+    borderColor: colors.rose,
+    backgroundColor: colors.cream3,
+    shadowColor: colors.rose,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.20,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   rowEmoji: { fontSize: 26 },
   rowContent: { flex: 1 },
   rowTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal },

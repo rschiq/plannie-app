@@ -4,15 +4,20 @@ import { Tag, SmallButton } from './UI';
 
 export function ItemCard({ item, selected, onSelect, type = 'activity' }) {
   return (
-    <TouchableOpacity onPress={() => onSelect(item)} activeOpacity={0.88}
-      style={[styles.card, selected && styles.cardSelected, item.featured && styles.cardFeatured]}>
+    <TouchableOpacity
+      onPress={() => onSelect(item)}
+      activeOpacity={0.88}
+      style={[styles.card, selected && styles.cardSelected, item.featured && styles.cardFeatured]}
+    >
       {item.featured && (
         <View style={styles.featBadge}>
+          {/* ✅ Explicit dark text on gold badge — colors.white is now dark surface */}
           <Text style={styles.featBadgeText}>✦ Featured Date Spot</Text>
         </View>
       )}
       {selected && (
         <View style={styles.checkCircle}>
+          {/* ✅ Explicit warm white — colors.white is now dark */}
           <Text style={styles.checkText}>✓</Text>
         </View>
       )}
@@ -33,10 +38,15 @@ export function ItemCard({ item, selected, onSelect, type = 'activity' }) {
         <Text style={styles.sponsoredText}>Sponsored</Text>
       )}
       <View style={styles.cardActions}>
-        <SmallButton label="View Details"
-          onPress={() => Alert.alert('Coming Soon', 'Detailed business pages launching soon!')} />
-        <SmallButton label={type === 'food' ? 'Book Now →' : 'Reserve →'} variant="active"
-          onPress={() => Alert.alert('Coming Soon', 'Booking integration coming soon!')} />
+        <SmallButton
+          label="View Details"
+          onPress={() => Alert.alert('Coming Soon', 'Detailed business pages launching soon!')}
+        />
+        <SmallButton
+          label={type === 'food' ? 'Book Now →' : 'Reserve →'}
+          variant="active"
+          onPress={() => Alert.alert('Coming Soon', 'Booking integration coming soon!')}
+        />
       </View>
     </TouchableOpacity>
   );
@@ -44,8 +54,11 @@ export function ItemCard({ item, selected, onSelect, type = 'activity' }) {
 
 export function AddonCard({ item, selected, onSelect }) {
   return (
-    <TouchableOpacity onPress={() => onSelect(item)} activeOpacity={0.88}
-      style={[styles.card, selected && styles.cardSelected, item.featured && styles.cardFeatured]}>
+    <TouchableOpacity
+      onPress={() => onSelect(item)}
+      activeOpacity={0.88}
+      style={[styles.card, selected && styles.cardSelected, item.featured && styles.cardFeatured]}
+    >
       {item.featured && (
         <View style={styles.featBadge}>
           <Text style={styles.featBadgeText}>✦ Featured Spot</Text>
@@ -68,28 +81,99 @@ export function AddonCard({ item, selected, onSelect }) {
 }
 
 const styles = StyleSheet.create({
+  // ── Base card — dark elevated surface ──────────────────────
   card: {
-    backgroundColor: colors.white, borderRadius: radius.md, padding: 20,
-    marginBottom: 13, borderWidth: 2, borderColor: 'transparent', ...shadow.sm,
+    backgroundColor: colors.cream2,    // #181626 dark elevated
+    borderRadius: radius.md,
+    padding: 20,
+    marginBottom: 13,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    ...shadow.sm,
   },
-  cardSelected: { borderColor: colors.rose, backgroundColor: '#FFF9F8' },
-  cardFeatured: { borderTopWidth: 3, borderTopColor: colors.gold2, paddingTop: 30 },
+
+  // ✅ Selected — dark surface + rose gold border + glow
+  // Was '#FFF9F8' light pink — now stays dark with rose gold accent
+  cardSelected: {
+    borderColor: colors.rose,
+    backgroundColor: colors.cream3,    // #221F32 slightly lifted
+    shadowColor: colors.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+
+  // Featured — gold top border
+  cardFeatured: {
+    borderTopWidth: 3,
+    borderTopColor: colors.gold,
+    paddingTop: 30,
+  },
+
+  // ── Featured badge ─────────────────────────────────────────
   featBadge: {
-    position: 'absolute', top: 0, right: 16, backgroundColor: colors.gold2,
-    borderBottomLeftRadius: 8, borderBottomRightRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
+    position: 'absolute', top: 0, right: 16,
+    backgroundColor: colors.gold,
+    borderBottomLeftRadius: 8, borderBottomRightRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
   },
-  featBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 9, color: colors.white, letterSpacing: 0.7, textTransform: 'uppercase' },
+  // ✅ Dark text on gold badge — explicit, NOT colors.white (now dark surface)
+  featBadgeText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 9,
+    color: '#1C1628',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+
+  // ── Check circle ───────────────────────────────────────────
   checkCircle: {
-    position: 'absolute', top: 16, right: 16, width: 26, height: 26,
-    borderRadius: 13, backgroundColor: colors.rose, justifyContent: 'center', alignItems: 'center',
+    position: 'absolute', top: 16, right: 16,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: colors.rose,
+    justifyContent: 'center', alignItems: 'center',
   },
-  checkText: { color: colors.white, fontSize: 13, fontFamily: fonts.bodySemiBold },
-  cardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, marginBottom: 2, paddingRight: 32 },
-  cardType: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 8 },
-  cardDesc: { fontFamily: fonts.body, fontSize: 13, color: colors.gray, lineHeight: 20, marginBottom: 10 },
-  metaRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 },
-  rating: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold2 },
+  // ✅ Explicit warm white — NOT colors.white (now dark surface)
+  checkText: { color: '#F2EDE8', fontSize: 13, fontFamily: fonts.bodySemiBold },
+
+  // ── Card content ───────────────────────────────────────────
+  cardTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: colors.charcoal,     // #F2EDE8 warm white — correct on dark card
+    marginBottom: 2,
+    paddingRight: 32,
+  },
+  cardType: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.gray2,        // #7A7688 muted — readable on dark
+    marginBottom: 8,
+  },
+  cardDesc: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.gray,         // #9B99A8 — readable on dark
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  rating: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold },
   popularText: { fontFamily: fonts.bodyMedium, fontSize: 11, color: colors.rose, marginBottom: 6 },
   sponsoredText: { fontFamily: fonts.body, fontSize: 10, color: colors.gray2, marginBottom: 4 },
-  cardActions: { flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.cream2 },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray4,   // #2A2838 subtle dark divider
+  },
 });

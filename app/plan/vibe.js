@@ -10,10 +10,10 @@ import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
 import { getPlacesByVibe } from '../../services/placesService';
 
 const VIBES = [
-  { id: 'Adventure', emoji: '⚡', desc: 'Active, exciting, and bold', pro: true },
-  { id: 'Chill',     emoji: '☕', desc: 'Slow, cozy, and easy',        pro: false },
-  { id: 'Romantic',  emoji: '🌹', desc: 'Dreamy, intimate, and special', pro: true },
-  { id: 'Fun',       emoji: '🎉', desc: 'Playful, loud, and joyful',    pro: false },
+  { id: 'Adventure', emoji: '⚡', desc: 'Active, exciting, and bold',    pro: true  },
+  { id: 'Chill',     emoji: '☕', desc: 'Slow, cozy, and easy',           pro: false },
+  { id: 'Romantic',  emoji: '🌹', desc: 'Dreamy, intimate, and special',  pro: true  },
+  { id: 'Fun',       emoji: '🎉', desc: 'Playful, loud, and joyful',      pro: false },
 ];
 
 const LOADING_MESSAGES = [
@@ -23,6 +23,7 @@ const LOADING_MESSAGES = [
   () => 'Building your perfect plan...',
 ];
 
+// ── Vibe Loader ───────────────────────────────────────────────
 function VibeLoader({ visible, vibe }) {
   const [msgIndex, setMsgIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -33,6 +34,7 @@ function VibeLoader({ visible, vibe }) {
   useEffect(() => {
     if (!visible) return;
     setMsgIndex(0);
+
     const msgTimer = setInterval(() => {
       Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
         setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
@@ -59,12 +61,22 @@ function VibeLoader({ visible, vibe }) {
   return (
     <Modal transparent animationType="fade" visible={visible}>
       <View style={loader.overlay}>
-        <LinearGradient colors={['#2C2520', '#4A3830']} style={loader.box}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <Text style={loader.emoji}>✨</Text>
+        {/* ✅ Midnight Velvet loader — deep purple, NOT warm brown */}
+        <LinearGradient
+          colors={['#1E1C2C', '#2A2240', '#1A1828']}
+          style={loader.box}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          {/* Rose gold glow ring */}
+          <View style={loader.glowRing}>
+            <Text style={loader.emoji}>✨</Text>
+          </View>
+
           <Animated.Text style={[loader.message, { opacity: fadeAnim }]}>
             {LOADING_MESSAGES[msgIndex](vibe)}
           </Animated.Text>
+
           <View style={loader.dots}>
             <Animated.View style={[loader.dot, { opacity: dot1 }]} />
             <Animated.View style={[loader.dot, { opacity: dot2 }]} />
@@ -79,131 +91,118 @@ function VibeLoader({ visible, vibe }) {
 export default function VibeScreen() {
   const router = useRouter();
   const { plan, updatePlan, generatePlan } = usePlan();
-  const [selected, setSelected]   = useState(plan.vibe || '');
+  const [selected, setSelected]     = useState(plan.vibe || '');
   const [showLoader, setShowLoader] = useState(false);
   const { isPremium } = usePremium();
   const PRO_VIBES = ['Romantic', 'Adventure'];
 
   async function confirm() {
-  if (!selected) return;
+    if (!selected) return;
 
-  if (plan.mode === 'auto') {
-    setShowLoader(true);
-    try {
-      const city = plan.city || 'Los Angeles, CA';
-      const vibeMap = { Adventure: 'adventure', Chill: 'chill', Romantic: 'romantic', Fun: 'fun' };
-      const vibeKey = vibeMap[selected] || 'chill';
+    if (plan.mode === 'auto') {
+      setShowLoader(true);
+      try {
+        const city = plan.city || 'Los Angeles, CA';
+        const vibeMap = { Adventure: 'adventure', Chill: 'chill', Romantic: 'romantic', Fun: 'fun' };
+        const vibeKey = vibeMap[selected] || 'chill';
 
-      const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-        'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
-      const geoRes  = await fetch(geoUrl);
-      const geoData = await geoRes.json();
+        const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
+          'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+        const geoRes  = await fetch(geoUrl);
+        const geoData = await geoRes.json();
 
-      if (geoData.status === 'OK') {
-        const { lat, lng } = geoData.results[0].geometry.location;
+        if (geoData.status === 'OK') {
+          const { lat, lng } = geoData.results[0].geometry.location;
 
-        let activityPlaces = await getPlacesByVibe(vibeKey, { lat, lng }, { radius: 8000, maxResults: 6 });
-        if (activityPlaces.length === 0) {
-          activityPlaces = await getPlacesByVibe('chill', { lat, lng }, { radius: 8000, maxResults: 6 });
-        }
-        const foodPlaces = await getPlacesByVibe('foodie', { lat, lng }, { radius: 5000, maxResults: 6 });
+          let activityPlaces = await getPlacesByVibe(vibeKey, { lat, lng }, { radius: 8000, maxResults: 6 });
+          if (activityPlaces.length === 0) {
+            activityPlaces = await getPlacesByVibe('chill', { lat, lng }, { radius: 8000, maxResults: 6 });
+          }
+          const foodPlaces = await getPlacesByVibe('foodie', { lat, lng }, { radius: 5000, maxResults: 6 });
 
-        function calcDist(from, to) {
-          if (!to) return null;
-          const R = 3958.8;
-          const dLat = ((to.lat - from.lat) * Math.PI) / 180;
-          const dLng = ((to.lng - from.lng) * Math.PI) / 180;
-          const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos((from.lat * Math.PI) / 180) *
-            Math.cos((to.lat * Math.PI) / 180) *
-            Math.sin(dLng / 2) ** 2;
-          return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
-        }
+          function calcDist(from, to) {
+            if (!to) return null;
+            const R = 3958.8;
+            const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+            const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos((from.lat * Math.PI) / 180) *
+              Math.cos((to.lat * Math.PI) / 180) *
+              Math.sin(dLng / 2) ** 2;
+            return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
+          }
 
-        function mapPlace(p, typeOverride) {
-          const TYPE_MAP = {
-            cafe: 'Cafe', restaurant: 'Restaurant', bar: 'Bar', park: 'Park',
-            night_club: 'Night Club', museum: 'Museum', art_gallery: 'Art Gallery',
-            bowling_alley: 'Bowling Alley', tourist_attraction: 'Attraction',
-            gym: 'Gym', bakery: 'Bakery', spa: 'Spa',
+          function mapPlace(p, typeOverride) {
+            const TYPE_MAP = {
+              cafe: 'Cafe', restaurant: 'Restaurant', bar: 'Bar', park: 'Park',
+              night_club: 'Night Club', museum: 'Museum', art_gallery: 'Art Gallery',
+              bowling_alley: 'Bowling Alley', tourist_attraction: 'Attraction',
+              gym: 'Gym', bakery: 'Bakery', spa: 'Spa',
+            };
+            const category = typeOverride || p.types?.map(t => TYPE_MAP[t]).find(Boolean) || 'Place';
+            return {
+              id: p.id, name: p.name, category, type: category,
+              desc: p.address || 'Near your location',
+              address: p.address || 'Near your location',
+              rating: p.rating != null ? Number(p.rating) : null,
+              totalRatings: p.totalRatings || 0,
+              isOpenNow: p.isOpenNow ?? null,
+              distance: calcDist({ lat, lng }, p.location),
+              location: p.location || null,
+              photoUrl: p.photoUrl ?? null,
+            };
+          }
+
+          const activity = activityPlaces.length > 0
+            ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)]) : null;
+          const food = foodPlaces.length > 0
+            ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant') : null;
+
+          const addonTypes = ['flowers', 'dessert', 'scenic'];
+          const addonType  = addonTypes[Math.floor(Math.random() * addonTypes.length)];
+          const addonOverride = {
+            flowers: { type: 'florist',            keyword: 'flower shop' },
+            dessert: { type: 'bakery',             keyword: 'dessert sweets' },
+            scenic:  { type: 'tourist_attraction', keyword: 'scenic spot' },
           };
-          const category = typeOverride || p.types?.map(t => TYPE_MAP[t]).find(Boolean) || 'Place';
-          return {
-            id: p.id, name: p.name, category, type: category,
-            desc: p.address || 'Near your location',
-            address: p.address || 'Near your location',
-            rating: p.rating != null ? Number(p.rating) : null,
-            totalRatings: p.totalRatings || 0,
-            isOpenNow: p.isOpenNow ?? null,
-            distance: calcDist({ lat, lng }, p.location),
-            location: p.location || null,
-            photoUrl: p.photoUrl ?? null,
-          };
+          const o = addonOverride[addonType];
+          const addonUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
+            'location=' + lat + ',' + lng + '&radius=8000&type=' + o.type +
+            '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+          const addonRes    = await fetch(addonUrl);
+          const addonData   = await addonRes.json();
+          const addonResults = addonData.results ?? [];
+          const addonRaw    = addonResults.length > 0
+            ? addonResults[Math.floor(Math.random() * Math.min(addonResults.length, 5))] : null;
+
+          const addonItem = addonRaw ? {
+            id: addonRaw.place_id, name: addonRaw.name, type: addonType,
+            note: addonRaw.opening_hours?.open_now ? 'Open now' : 'Nearby',
+            desc: addonRaw.vicinity || 'Near your location',
+            address: addonRaw.vicinity || 'Near your location',
+            rating: addonRaw.rating ? Number(addonRaw.rating) : null,
+            totalRatings: addonRaw.user_ratings_total || 0,
+            distance: calcDist({ lat, lng }, addonRaw.geometry?.location
+              ? { lat: addonRaw.geometry.location.lat, lng: addonRaw.geometry.location.lng } : null),
+            location: addonRaw.geometry?.location
+              ? { lat: addonRaw.geometry.location.lat, lng: addonRaw.geometry.location.lng } : null,
+          } : null;
+
+          updatePlan({ vibe: selected, mode: 'auto', activity, food, addonType: addonItem ? addonType : null, addonItem });
         }
-
-        const activity = activityPlaces.length > 0
-          ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)])
-          : null;
-        const food = foodPlaces.length > 0
-          ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant')
-          : null;
-
-        // Fetch addon
-const addonTypes = ['flowers', 'dessert', 'scenic'];
-const addonType = addonTypes[Math.floor(Math.random() * addonTypes.length)];
-const addonOverride = {
-  flowers: { type: 'florist', keyword: 'flower shop' },
-  dessert: { type: 'bakery', keyword: 'dessert sweets' },
-  scenic:  { type: 'tourist_attraction', keyword: 'scenic spot' },
-};
-const o = addonOverride[addonType];
-const addonUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
-  'location=' + lat + ',' + lng +
-  '&radius=8000&type=' + o.type +
-  '&keyword=' + encodeURIComponent(o.keyword) +
-  '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
-const addonRes  = await fetch(addonUrl);
-const addonData = await addonRes.json();
-const addonResults = addonData.results ?? [];
-const addonRaw = addonResults.length > 0
-  ? addonResults[Math.floor(Math.random() * Math.min(addonResults.length, 5))]
-  : null;
-
-const addonItem = addonRaw ? {
-  id: addonRaw.place_id,
-  name: addonRaw.name,
-  type: addonType,
-  note: addonRaw.opening_hours?.open_now ? 'Open now' : 'Nearby',
-  desc: addonRaw.vicinity || 'Near your location',
-  address: addonRaw.vicinity || 'Near your location',
-  rating: addonRaw.rating ? Number(addonRaw.rating) : null,
-  totalRatings: addonRaw.user_ratings_total || 0,
-  distance: calcDist({ lat, lng }, addonRaw.geometry?.location
-    ? { lat: addonRaw.geometry.location.lat, lng: addonRaw.geometry.location.lng }
-    : null),
-  location: addonRaw.geometry?.location
-    ? { lat: addonRaw.geometry.location.lat, lng: addonRaw.geometry.location.lng }
-    : null,
-} : null;
-
-updatePlan({ vibe: selected, mode: 'auto', activity, food, addonType: addonItem ? addonType : null, addonItem });
+      } catch (e) {
+        console.log('Plan it for me error:', e.message);
+        const generated = generatePlan(selected, plan.budget, plan.time);
+        updatePlan({ vibe: selected, ...generated });
       }
-    } catch (e) {
-      console.log('Plan it for me error:', e.message);
-      const generated = generatePlan(selected, plan.budget, plan.time);
-      updatePlan({ vibe: selected, ...generated });
+
+      setTimeout(() => { setShowLoader(false); router.push('/plan/cart'); }, 3000);
+
+    } else {
+      updatePlan({ vibe: selected });
+      router.push('/plan/activity');
     }
-
-    setTimeout(() => {
-      setShowLoader(false);
-      router.push('/plan/cart');
-    }, 3000);
-
-  } else {
-    updatePlan({ vibe: selected });
-    router.push('/plan/activity');
   }
-}
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -233,6 +232,7 @@ updatePlan({ vibe: selected, mode: 'auto', activity, food, addonType: addonItem 
               activeOpacity={0.85}
             >
               <Text style={styles.emoji}>{item.emoji}</Text>
+              {/* ✅ Explicit warm white — colors.charcoal is now light, correct on dark cards */}
               <Text style={styles.name}>
                 {item.id} {item.pro && !isPremium ? '🔒' : ''}
               </Text>
@@ -251,20 +251,106 @@ updatePlan({ vibe: selected, mode: 'auto', activity, food, addonType: addonItem 
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
-  grid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 24, gap: 14, alignContent: 'flex-start', paddingTop: 4 },
-  card: { width: '47%', backgroundColor: colors.white, borderRadius: radius.md, padding: 20, alignItems: 'center', borderWidth: 2, borderColor: 'transparent', ...shadow.sm },
-  cardSel: { borderColor: colors.rose, backgroundColor: '#FFF8F7' },
+  grid: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 24,
+    gap: 14,
+    alignContent: 'flex-start',
+    paddingTop: 4,
+  },
+
+  // ── Vibe card — dark elevated surface ─────────────────────
+  card: {
+    width: '47%',
+    backgroundColor: colors.cream2,    // #181626 dark elevated
+    borderRadius: radius.md,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    ...shadow.sm,
+  },
+
+  // ✅ Selected: dark elevated + rose gold border + glow
+  // Was '#FFF8F7' (light pink) — now stays dark with rose gold accent
+  cardSel: {
+    borderColor: colors.rose,          // rose gold border
+    backgroundColor: colors.cream3,    // #221F32 slightly lifted
+    shadowColor: colors.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.30,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+
   emoji: { fontSize: 32, marginBottom: 8 },
-  name: { fontFamily: fonts.displayMedium, fontSize: 20, color: colors.charcoal, marginBottom: 4, textAlign: 'center' },
-  desc: { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, textAlign: 'center', lineHeight: 15 },
-  bbar: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
+  name: {
+    fontFamily: fonts.displayMedium,
+    fontSize: 20,
+    color: '#F2EDE8',     // ✅ explicit warm white
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  desc: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: 'rgba(242,237,232,0.50)',   // ✅ explicit muted warm white
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+
+  bbar: {
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    paddingTop: 12,
+    backgroundColor: colors.cream,
+  },
 });
 
+// ── Loader styles ─────────────────────────────────────────────
 const loader = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  box:     { width: 280, borderRadius: 24, padding: 40, alignItems: 'center' },
-  emoji:   { fontSize: 48, marginBottom: 20 },
-  message: { fontFamily: fonts.bodyMedium, fontSize: 16, color: colors.gold, textAlign: 'center', marginBottom: 24, lineHeight: 24 },
-  dots:    { flexDirection: 'row', gap: 8 },
-  dot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.gold },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // ✅ Midnight Velvet — deep purple, no warm brown
+  box: {
+    width: 280,
+    borderRadius: 28,
+    padding: 40,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(212,149,111,0.15)',
+  },
+  glowRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(212,149,111,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(212,149,111,0.20)',
+  },
+  emoji:   { fontSize: 36 },
+  message: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 16,
+    color: colors.gold,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  dots: { flexDirection: 'row', gap: 8 },
+  dot:  {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.rose,     // ✅ rose gold dots
+  },
 });

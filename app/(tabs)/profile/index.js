@@ -49,9 +49,10 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
 
-        {/* Hero */}
+        {/* ── Hero — Midnight Velvet ── */}
+        {/* ✅ Deep purple gradient — NOT warm brown ['#2C2520', '#4A3830'] */}
         <LinearGradient
-          colors={['#2C2520', '#4A3830']}
+          colors={['#1C1628', '#241A38', '#1A1428']}
           style={styles.hero}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -59,13 +60,14 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             <Text style={styles.avatarEmoji}>👫</Text>
           </View>
+          {/* ✅ Explicit warm white — colors.cream is now dark #0E0C15 */}
           <Text style={styles.heroName}>Your Couple Profile</Text>
           <Text style={styles.heroSub}>
             Member since 2024 · {savedPlans.length} plans saved
           </Text>
         </LinearGradient>
 
-        {/* Premium Banner */}
+        {/* ── Premium Banner — gold-to-rose-gold gradient (kept, looks great) ── */}
         <LinearGradient
           colors={[colors.gold2, colors.blush2]}
           style={styles.premBanner}
@@ -85,7 +87,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </LinearGradient>
 
-        {/* Menu */}
+        {/* ── Menu ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Your Account</Text>
 
@@ -96,11 +98,11 @@ export default function ProfileScreen() {
             onPress={() => router.push('/profile/partner-details')}
           />
           <ProfileRow
-  icon="💍"
-  title="Special Dates"
-  sub="Your most meaningful dates"
-  onPress={() => router.push('/profile/special-dates')}
-/>
+            icon="💍"
+            title="Special Dates"
+            sub="Your most meaningful dates"
+            onPress={() => router.push('/profile/special-dates')}
+          />
           <ProfileRow
             icon="🎲"
             title="Surprise Date Generator"
@@ -124,64 +126,30 @@ export default function ProfileScreen() {
             onPress={() => {
               if (!isPremium) { router.push('/pro'); return; }
               const latest = savedPlans[0];
-              const lines = [];
+              const lines  = [];
               if (latest) {
                 const vibeTitles = {
-  Romantic: 'Romantic Evening Escape 🌹',
-  Adventure: 'Epic Adventure Date ⚡',
-  Chill: 'Chill Night Out ☕',
-  Fun: 'Fun Date Night 🎉',
-  Custom: 'A Night to Remember 🌟',
-};
-const vibeTitle = vibeTitles[latest.vibe] || latest.title;
-lines.push(vibeTitle);
+                  Romantic:  'Romantic Evening Escape 🌹',
+                  Adventure: 'Epic Adventure Date ⚡',
+                  Chill:     'Chill Night Out ☕',
+                  Fun:       'Fun Date Night 🎉',
+                  Custom:    'A Night to Remember 🌟',
+                };
+                lines.push(vibeTitles[latest.vibe] || latest.title);
                 lines.push('');
                 const times = ['7:00 PM', '8:30 PM', '10:00 PM'];
                 latest.items.forEach((item, idx) => {
                   const parts = item.split(' ');
                   const emoji = parts[0];
-                  const name = parts.slice(1).join(' ');
-                  const time = times[idx] || '';
+                  const name  = parts.slice(1).join(' ');
+                  const time  = times[idx] || '';
                   let line = '';
-                  if (idx === 0) {
-                    const activityPhrases = {
-                      'Cliffs of Id Rock Climbing': 'an exciting rock climbing session at Cliffs of Id',
-                      'Bowlero Hollywood': 'a fun bowling session at Bowlero Hollywood',
-                      'Two Bit Circus': 'an epic night of games and VR at Two Bit Circus',
-                      'Puttshack': 'a hilarious round of tech mini golf at Puttshack',
-                      'Top Golf Hollywood': 'a competitive round at Topgolf Hollywood',
-                      'Topgolf VIP Suite': 'a luxury golf experience at Topgolf VIP Suite',
-                      'Blue Whale Jazz Club': 'a soulful evening at Blue Whale Jazz Club',
-                      'Perch Rooftop Lounge': 'a stunning rooftop evening at Perch',
-                      'Wine Tasting at Malibu Winery': 'a relaxed wine tasting at Malibu Winery',
-                      'The Last Bookstore': 'a cozy browse through The Last Bookstore',
-                      'Griffith Trail Walk': 'a scenic hike along the Griffith Trail',
-                      'Runyon Canyon Hike': 'a refreshing hike up Runyon Canyon',
-                      'Echo Park Lake Walk': 'a peaceful stroll around Echo Park Lake',
-                      'The Landmark Westwood': 'a cozy movie night at The Landmark Westwood',
-                      'Griffith Observatory Overlook': 'a magical visit to Griffith Observatory',
-                      'Santa Monica Sunset Walk': 'a romantic sunset walk along Santa Monica',
-                      'NoBar Karaoke': 'a hilarious karaoke session at NoBar',
-                      'Dave & Busters Arcade': 'a competitive night at Dave & Busters',
-                      'The Void VR Experience': 'a mind-blowing VR adventure at The Void',
-                      'LA Ice Arena': 'a fun ice skating session at LA Ice Arena',
-                      'Axe Throwing LA': 'an exciting axe throwing session at Axe Throwing LA',
-                      'Helicopter Tour LA': 'a breathtaking helicopter tour over LA',
-                      'Hot Air Balloon Temecula': 'a magical hot air balloon ride over Temecula',
-                    };
-                    const phrase = activityPhrases[name] || `a great time at ${name}`;
-                    line = `${time} — 🎯 Start with ${phrase}`;
-                  } else if (emoji === '🍽️') {
-                    line = `${time} — 🍽️ Enjoy dinner at ${name}`;
-                  } else if (emoji === '🍰') {
-                    line = `${time} — 🍰 End the night with dessert at ${name}`;
-                  } else if (emoji === '💐') {
-                    line = `${time} — 🌸 End the night with a romantic stop at ${name} for fresh flowers`;
-                  } else if (emoji === '🌅') {
-                    line = `${time} — 🌅 End with a scenic stop at ${name}`;
-                  } else {
-                    line = `${time} — ✨ Round off the night at ${name}`;
-                  }
+                  if (idx === 0)           line = `${time} — 🎯 Start with a great time at ${name}`;
+                  else if (emoji === '🍽️') line = `${time} — 🍽️ Enjoy dinner at ${name}`;
+                  else if (emoji === '🍰') line = `${time} — 🍰 End the night with dessert at ${name}`;
+                  else if (emoji === '💐') line = `${time} — 🌸 End the night with flowers from ${name}`;
+                  else if (emoji === '🌅') line = `${time} — 🌅 End with a scenic stop at ${name}`;
+                  else                     line = `${time} — ✨ Round off the night at ${name}`;
                   lines.push(line);
                 });
                 lines.push('');
@@ -189,8 +157,7 @@ lines.push(vibeTitle);
                 lines.push('');
               }
               lines.push('Planned with Plannie 💕');
-              const message = lines.length > 1 ? lines.join('\n') : 'Check out this date plan I made on Plannie 💕';
-              Share.share({ message });
+              Share.share({ message: lines.join('\n') });
             }}
           />
           <ProfileRow
@@ -201,7 +168,7 @@ lines.push(vibeTitle);
           />
         </View>
 
-        {/* Footer */}
+        {/* ── Footer ── */}
         <View style={styles.appInfo}>
           <Text style={styles.appInfoText}>Plannie  ·  v1.0.0</Text>
           <Text style={styles.appInfoSub}>Made with 💕 for couples everywhere</Text>
@@ -220,70 +187,49 @@ lines.push(vibeTitle);
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.cream },
+  safe:   { flex: 1, backgroundColor: colors.cream },
   scroll: { flex: 1 },
 
-  hero: {
-    padding: 32, paddingTop: 48, paddingBottom: 32,
-    alignItems: 'center',
-  },
+  // ── Hero ──────────────────────────────────────────────────
+  hero: { padding: 30, paddingTop: 35, paddingBottom: 30, alignItems: 'center' },
   avatar: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: colors.gold2,
+    width: 80, height: 60, borderRadius: 40,
+    backgroundColor: 'rgba(201,169,110,0.20)',
+    borderWidth: 1, borderColor: 'rgba(201,169,110,0.35)',
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 14, ...shadow.lg,
   },
   avatarEmoji: { fontSize: 38 },
-  heroName: { fontFamily: fonts.display, fontSize: 28, color: colors.cream },
-  heroSub: {
-    fontFamily: fonts.body, fontSize: 13,
-    color: 'rgba(251,247,242,0.45)', marginTop: 4,
-  },
 
-  premBanner: { margin: 20, borderRadius: radius.md, padding: 24 },
-  premTitle: {
-    fontFamily: fonts.display, fontSize: 26,
-    color: colors.white, marginBottom: 8,
-  },
-  premSub: {
-    fontFamily: fonts.body, fontSize: 13,
-    color: 'rgba(255,255,255,0.8)', lineHeight: 20, marginBottom: 18,
-  },
-  premBtn: {
-    backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.full,
-    paddingVertical: 13, paddingHorizontal: 24,
-    alignSelf: 'flex-start',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
-  },
-  premBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.white },
+  // ✅ Explicit warm white — colors.cream is now #0E0C15 (dark bg)
+  heroName: { fontFamily: fonts.display, fontSize: 28, color: '#F2EDE8' },
+  heroSub:  { fontFamily: fonts.body, fontSize: 13, color: 'rgba(242,237,232,0.45)', marginTop: 4 },
 
-  section: { paddingHorizontal: 20, marginTop: 4 },
-  sectionLabel: {
-    fontFamily: fonts.bodySemiBold, fontSize: 10,
-    letterSpacing: 1.2, textTransform: 'uppercase',
-    color: colors.gray2, marginBottom: 12,
-  },
+  // ── Premium banner — gold-to-rose-gold (kept exactly, looks great) ──
+  premBanner:   { margin: 20, borderRadius: radius.md, padding: 24 },
+  // Dark text on gold = luxury look, intentional
+  premTitle:    { fontFamily: fonts.display, fontSize: 26, color: '#1C1628', marginBottom: 8 },
+  premSub:      { fontFamily: fonts.body, fontSize: 13, color: 'rgba(28,22,40,0.75)', lineHeight: 20, marginBottom: 18 },
+  premBtn:      { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: radius.full, paddingVertical: 13, paddingHorizontal: 24, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  premBtnText:  { fontFamily: fonts.bodyMedium, fontSize: 14, color: '#1C1628' },
 
-  prow: {
-    backgroundColor: colors.white, borderRadius: radius.sm,
-    padding: 16, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginBottom: 8, ...shadow.sm,
-  },
-  prowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  prowIcon: { fontSize: 20, width: 32 },
+  // ── Menu rows ─────────────────────────────────────────────
+  section:      { paddingHorizontal: 20, marginTop: 4 },
+  sectionLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: colors.gray2, marginBottom: 12 },
+
+  prow:      { backgroundColor: colors.cream2, borderRadius: radius.sm, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, ...shadow.sm },
+  prowLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  prowIcon:  { fontSize: 20, width: 32 },
   prowTitle: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal },
-  prowSub: { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 1 },
+  prowSub:   { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 1 },
   prowArrow: { fontSize: 20, color: colors.gray3 },
-  proBadge: {
-    backgroundColor: colors.gold2, borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  proBadgeText: {
-    fontFamily: fonts.bodySemiBold, fontSize: 10,
-    color: colors.white, letterSpacing: 0.4,
-  },
 
-  appInfo: { alignItems: 'center', marginTop: 32 },
-  appInfoText: { fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
+  proBadge:     { backgroundColor: colors.gold, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  // ✅ Dark text on gold badge — readable and premium looking
+  proBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: '#1C1628', letterSpacing: 0.4 },
+
+  // ── Footer ────────────────────────────────────────────────
+  appInfo:    { alignItems: 'center', marginTop: 32 },
+  appInfoText:{ fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
   appInfoSub: { fontFamily: fonts.body, fontSize: 12, color: colors.gray3, marginTop: 4 },
 });
