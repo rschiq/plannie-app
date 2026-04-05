@@ -55,7 +55,7 @@ export default function AddonsScreen() {
     try {
       // Step 1 — geocode the city the user entered
       const geoRes = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(plan.city)}&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(plan.city)}&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w`
       );
       const geoData = await geoRes.json();
 

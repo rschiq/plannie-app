@@ -1,13 +1,12 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlan } from '../../../hooks/usePlan';
 import { usePremium } from '../../../hooks/usePremium';
 import { colors, fonts, radius, shadow } from '../../../constants/theme';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function ProfileRow({ icon, title, sub, badge, onPress, isPremium }) {
   return (
@@ -33,15 +32,32 @@ function ProfileRow({ icon, title, sub, badge, onPress, isPremium }) {
 export default function ProfileScreen() {
   const { savedPlans, plan } = usePlan();
   const { setIsPremium } = usePremium();
+  const router_ = useRouter();                // ✅ useRouter for post-async navigation
   const [isPremium, setIsPremiumLocal] = useState(false);
+  const [isLoggedIn, setIsLoggedIn]   = useState(false);
+  const [userEmail, setUserEmail]     = useState('');
 
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem('@plannie_is_premium').then(val => {
         setIsPremiumLocal(val === 'true');
       });
+      AsyncStorage.multiGet(['@plannie_is_logged_in', '@plannie_user_email']).then(pairs => {
+        setIsLoggedIn(pairs[0][1] === 'true');
+        setUserEmail(pairs[1][1] || '');
+      });
     }, [])
   );
+
+  async function handleSignOut() {
+    // ✅ Remove both Plannie auth keys + the generic isLoggedIn key
+    await AsyncStorage.removeItem('isLoggedIn');
+    await AsyncStorage.multiRemove(['@plannie_is_logged_in', '@plannie_user_email']);
+    setIsLoggedIn(false);
+    setUserEmail('');
+    // ✅ Redirect immediately — user cannot stay on Profile after sign out
+    router_.replace('/auth/welcome');
+  }
 
   const comingSoon = () => router.push('/pro');
 
@@ -179,6 +195,22 @@ export default function ProfileScreen() {
             sub="Notifications, preferences"
             onPress={() => router.push('/profile/settings')}
           />
+          {/* ✅ Shows Sign In when logged out, Sign Out when logged in */}
+          {isLoggedIn ? (
+            <ProfileRow
+              icon="👤"
+              title={userEmail || 'Signed In'}
+              sub="Tap to sign out"
+              onPress={handleSignOut}
+            />
+          ) : (
+            <ProfileRow
+              icon="👤"
+              title="Sign In / Sign Up"
+              sub="Log in to sync your plans"
+              onPress={() => router.push('/auth/welcome')}
+            />
+          )}
         </View>
 
         {/* ── Footer ── */}

@@ -202,7 +202,7 @@ export default function HowScreen() {
     try {
       const city = plan.city || 'Los Angeles, CA';
       const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-        'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+        'address=' + encodeURIComponent(city) + '&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
       const geoRes  = await fetch(geoUrl);
       const geoData = await geoRes.json();
 
@@ -264,7 +264,7 @@ export default function HowScreen() {
         const o = addonOverride[addonType];
         const addonUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
           'location=' + lat + ',' + lng + '&radius=8000&type=' + o.type +
-          '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+          '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
         const addonRes    = await fetch(addonUrl);
         const addonData   = await addonRes.json();
         const addonResults = addonData.results ?? [];
