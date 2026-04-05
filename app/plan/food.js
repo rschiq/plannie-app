@@ -1,3 +1,4 @@
+// app/plan/food.js
 import { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -5,107 +6,150 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
 import { RESTAURANTS } from '../../data';
-import { getPlacesByVibe } from '../../services/placesService';
+import { getPlacesNearby, getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
 
-const VIBE_MAP = {
-  Chill: 'chill',
-  Fun: 'fun',
-  Romantic: 'romantic',
-  Adventure: 'adventure',
-};
-
-function cleanType(types = []) {
-  const TYPE_MAP = {
-    cafe: 'Cafe', restaurant: 'Restaurant', bar: 'Bar', park: 'Park',
-    night_club: 'Night Club', museum: 'Museum', art_gallery: 'Art Gallery',
-    bowling_alley: 'Bowling Alley', amusement_park: 'Amusement Park',
-    gym: 'Gym', stadium: 'Stadium', tourist_attraction: 'Attraction',
-    shopping_mall: 'Mall', movie_theater: 'Cinema', spa: 'Spa', bakery: 'Bakery',
-  };
-  for (const t of types) { if (TYPE_MAP[t]) return TYPE_MAP[t]; }
-  return 'Place';
+function getTag(p) {
+  if (p.rating >= 4.8)                          return 'Top rated';
+  if (p.totalRatings > 1000)                    return 'Popular';
+  if (p.isOpenNow === true)                     return 'Open now';
+  if (p.priceLevel === 0 || p.priceLevel === 1) return 'Budget friendly';
+  if (p.rating >= 4.5)                          return 'Highly rated';
+  return 'Nearby';
 }
 
 function calcDistMiles(from, to) {
+  if (!from || !to) return null;
   const R = 3958.8;
   const dLat = ((to.lat - from.lat) * Math.PI) / 180;
   const dLng = ((to.lng - from.lng) * Math.PI) / 180;
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos((from.lat * Math.PI) / 180) *
-    Math.cos((to.lat * Math.PI) / 180) *
+    Math.cos((to.lat  * Math.PI) / 180) *
     Math.sin(dLng / 2) ** 2;
-  return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
-}
-
-function getTag(p) {
-  if (p.rating >= 4.8) return 'Top rated';
-  if (p.totalRatings > 1000) return 'Popular';
-  if (p.isOpenNow === true) return 'Open now';
-  if (p.priceLevel === 0 || p.priceLevel === 1) return 'Budget friendly';
-  if (p.rating >= 4.5) return 'Highly rated';
-  return 'Nearby';
+  return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
 }
 
 export default function FoodScreen() {
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
   const [selected, setSelected] = useState(plan.food);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems]       = useState([]);
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => { loadRestaurants(); }, []);
 
   async function loadRestaurants() {
     setLoading(true);
     try {
-      const geoRes = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(plan.city)}&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8`
-      );
-      const geoData = await geoRes.json();
+      // ✅ Use stored coords only — no geocoding fallback
+      // Geocoding "Studio City" returns broad LA coords → wrong results
+      if (!plan.coords?.lat || !plan.coords?.lng) {
+        console.log('[Food] No coords stored — using local fallback data');
+        setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+        setLoading(false);
+        return;
+      }
 
-      if (geoData.status === 'OK') {
-        const { lat, lng } = geoData.results[0].geometry.location;
+      const { lat: baseLat, lng: baseLng } = plan.coords;
+      const selectedArea = (plan.city || '').split(',')[0].trim();
 
-        // Always fetch restaurants for food screen regardless of vibe
-        const places = await getPlacesByVibe('foodie', { lat, lng }, { radius: 8000, maxResults: 6 });
+      // PART 4: Multi-stop — search near activity first
+      const activityLocation = plan.activity?.location;
+      let places = [];
 
-        if (places.length > 0) {
-          const mapped = places.map((p) => ({
-            id: p.id || p.place_id,
-place_id: p.place_id || p.id,
-name: p.name,
-category: cleanType(p.types),
-type: cleanType(p.types),
-desc: p.address || 'Near your location',
-address: p.address || 'Near your location',
-rating: p.rating != null ? Number(p.rating) : null,
-totalRatings: p.totalRatings || 0,
-isOpenNow: p.isOpenNow ?? null,
-distance: p.location
-  ? Number(calcDistMiles(geoData.results[0].geometry.location, p.location))
-  : null,
-tag: getTag(p),
-featured: p.rating >= 4.5,
-popular: p.totalRatings > 500,
-photoUrl: p.photoUrl ?? null,
-location: p.location || null,
-          }));
-          setItems(mapped);
-          setLoading(false);
-          return;
+      if (activityLocation?.lat && activityLocation?.lng) {
+        places = await getPlacesNearby(
+          ['restaurant', 'cafe', 'bar'],
+          activityLocation,
+          { radius: 1500, maxResults: 12, selectedArea }
+        );
+        if (places.length < 4) {
+          places = await getPlacesNearby(
+            ['restaurant', 'cafe', 'bar'],
+            activityLocation,
+            { radius: 3000, maxResults: 12, selectedArea }
+          );
         }
+      }
+
+      // Fallback to plan coords if no activity or still sparse
+      if (places.length < 3) {
+        places = await getPlacesByVibe(
+          'foodie',
+          { lat: baseLat, lng: baseLng },
+          { radius: 2000, maxResults: 12, selectedArea }
+        );
+        if (places.length < 4) {
+          places = await getPlacesByVibe(
+            'foodie',
+            { lat: baseLat, lng: baseLng },
+            { radius: 5000, maxResults: 12, selectedArea }
+          );
+        }
+      }
+
+      // PART 7: avoid showing same type as activity
+      const activityType = plan.activity?.type || '';
+      const filtered = places.filter(p => {
+        const type = getReadableType(p.types);
+        return type !== activityType;
+      });
+
+      const finalPlaces = filtered.length >= 3 ? filtered : places;
+
+      if (finalPlaces.length > 0) {
+        const refCoords = activityLocation || { lat: plan.coords.lat, lng: plan.coords.lng };
+
+        // PART 5: enrich photos for places missing them (capped at 4)
+        const needsPhoto = finalPlaces.filter(p => !p.photoUrl).slice(0, 4);
+        if (needsPhoto.length > 0) {
+          await Promise.allSettled(needsPhoto.map(async p => {
+            const d = await fetchPlaceDetails(p.id);
+            if (d?.photos?.[0]) p.photoUrl = d.photos[0];
+          }));
+        }
+
+        const mapped = finalPlaces.map(p => {
+          const dist = p.distanceMiles ?? calcDistMiles(refCoords, p.location);
+          // PART 6: consistent full data object
+          return {
+            id:            p.id,
+            place_id:      p.id,
+            name:          p.name,
+            category:      getReadableType(p.types),
+            type:          getReadableType(p.types),
+            shortLocation: p.shortLocation || shortenVicinity(p.address) || '',
+            desc:          p.shortLocation || shortenVicinity(p.address) || '',
+            address:       p.address || '',
+            rating:        p.rating != null ? Number(p.rating) : null,
+            totalRatings:  p.totalRatings || 0,
+            isOpenNow:     p.isOpenNow ?? null,
+            distance:      dist,
+            tag:           getTag(p),
+            featured:      p.rating >= 4.5,
+            popular:       p.totalRatings > 500,
+            photoUrl:      p.photoUrl ?? null,
+            location:      p.location || null,
+            curationLabel: getCurationLabel({ ...p, distance: dist }, 'foodie'),
+          };
+        });
+
+        setItems(mapped);
+        setLoading(false);
+        return;
       }
     } catch (e) {
       console.log('Places API failed, using local data:', e.message);
     }
+
     setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
     setLoading(false);
   }
 
-  function handleAdd() { updatePlan({ food: selected }); router.push('/plan/addons'); }
-  function handleSkip() { updatePlan({ food: null }); router.push('/plan/addons'); }
+  function handleAdd()  { updatePlan({ food: selected }); router.push('/plan/addons'); }
+  function handleSkip() { updatePlan({ food: null });     router.push('/plan/addons'); }
 
   const btnLabel = selected
     ? `✓ Add "${selected.name.split(' ').slice(0, 3).join(' ')}" →`
@@ -127,7 +171,7 @@ location: p.location || null,
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-          {items.map((item) => (
+          {items.map(item => (
             <ItemCard
               key={item.id}
               item={item}
@@ -149,10 +193,10 @@ location: p.location || null,
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.cream },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
-  loader: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  safe:        { flex: 1, backgroundColor: colors.cream },
+  scroll:      { flex: 1 },
+  content:     { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
+  loader:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontFamily: fonts.body, fontSize: 14, color: colors.gray2 },
-  bbar: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
+  bbar:        { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
 });

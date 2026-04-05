@@ -519,10 +519,12 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
 
           {/* ── VIEW 1: List ── */}
           {!preview && (
-            <View style={{ padding: 24, flex: 1 }}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.sheetName}>{title}</Text>
-              <Text style={styles.sheetSub}>Tap a place to preview before swapping</Text>
+            <View style={sw.listContainer}>
+              <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
+                <View style={styles.sheetHandle} />
+                <Text style={styles.sheetName}>{title}</Text>
+                <Text style={styles.sheetSub}>Tap a place to preview before swapping</Text>
+              </View>
 
               {loading ? (
                 <View style={{ paddingVertical: 32, alignItems: 'center' }}>
@@ -539,7 +541,12 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
                   </Text>
                 </View>
               ) : (
-                <ScrollView showsVerticalScrollIndicator={false}>
+                // ✅ flex: 1 so ScrollView can grow, paddingBottom clears cancel button
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 100 }}
+                  showsVerticalScrollIndicator={false}
+                >
                   {items.map((item) => (
                     <TouchableOpacity
                       key={item.id}
@@ -576,7 +583,8 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
                 </ScrollView>
               )}
 
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+              {/* Cancel pinned at bottom, outside ScrollView */}
+              <TouchableOpacity style={[styles.cancelBtn, { margin: 24, marginTop: 0 }]} onPress={onClose} activeOpacity={0.8}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1060,6 +1068,11 @@ const sw = StyleSheet.create({
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
     overflow: 'hidden',
+  },
+  // ✅ flex: 1 so the list fills the sheet and ScrollView can scroll
+  listContainer: {
+    flex: 1,
+    maxHeight: '100%',
   },
 });
 
