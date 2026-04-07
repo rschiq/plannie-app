@@ -213,6 +213,46 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* ── Your Style ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Your Style</Text>
+          <View style={styles.styleCard}>
+            <Text style={styles.styleCardTitle}>Your Preferences</Text>
+            <Text style={styles.styleCardSub}>Used to personalise every date plan</Text>
+            <View style={styles.styleTags}>
+              {['Romantic', 'Chill', 'Fine Dining', 'Outdoor', 'Adventure'].map((tag) => (
+                <View key={tag} style={styles.styleTag}>
+                  <Text style={styles.styleTagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+            <ProfileRow
+              icon="🎭"
+              title="Your Vibes"
+              sub="Romantic, Chill, Adventure..."
+              onPress={() => router.push('/profile/partner-details')}
+            />
+            <ProfileRow
+              icon="🍽️"
+              title="Food Preferences"
+              sub="Cuisine types you love"
+              onPress={() => router.push('/profile/partner-details')}
+            />
+            <ProfileRow
+              icon="🎯"
+              title="Activity Types"
+              sub="What gets you excited"
+              onPress={() => router.push('/profile/partner-details')}
+            />
+            <ProfileRow
+              icon="💑"
+              title="Partner Preferences"
+              sub="Personalise for your partner"
+              onPress={() => router.push('/profile/partner-details')}
+            />
+          </View>
+        </View>
+
         {/* ── Footer ── */}
         <View style={styles.appInfo}>
           <Text style={styles.appInfoText}>Plannie  ·  v1.0.0</Text>
@@ -329,4 +369,12 @@ const styles = StyleSheet.create({
   appInfo:    { alignItems: 'center', marginTop: 32 },
   appInfoText:{ fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
   appInfoSub: { fontFamily: fonts.body, fontSize: 12, color: colors.gray3, marginTop: 4 },
+
+  // ── Your Style ────────────────────────────────────────────
+  styleCard:      { backgroundColor: colors.cream2, borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4 },
+  styleCardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, padding: 16, paddingBottom: 2 },
+  styleCardSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, paddingHorizontal: 16, paddingBottom: 12 },
+  styleTags:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingBottom: 12 },
+  styleTag:       { backgroundColor: 'rgba(201,169,110,0.12)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(201,169,110,0.22)' },
+  styleTagText:   { fontFamily: fonts.bodySemiBold, fontSize: 11, color: colors.gold },
 });

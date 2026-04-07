@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform, Image, Pressable } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform, Image, Pressable, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -83,6 +83,8 @@ function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
 
 // ─── Helpers ─────────────────────────────────────────────────
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
+const SCREEN_W = Dimensions.get('window').width;
+const VIBE_MAP = { Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure' };
 
 // Readable type labels from raw Google types
 const TYPE_MAP = {
@@ -350,8 +352,6 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
   const [details, setDetails]   = useState(null);   // fetched place details
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const VIBE_MAP = { Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure' };
-
   useEffect(() => {
     if (!visible || !swapKey) return;
     setItems([]);
@@ -379,11 +379,10 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
         const { lat, lng } = geoData.results[0].geometry.location;
 
         if (swapKey === 'addon') {
-          const types = ['flowers', 'dessert', 'scenic'].filter((t) => t !== plan.addonType);
+          const types = ['flowers', 'dessert'].filter((t) => t !== plan.addonType);
           const addonOverride = {
-            flowers: { type: 'florist',            keyword: 'flower shop' },
-            dessert: { type: 'bakery',             keyword: 'dessert sweets' },
-            scenic:  { type: 'tourist_attraction', keyword: 'scenic spot park' },
+            flowers: { type: 'florist', keyword: 'flower shop' },
+            dessert: { type: 'bakery',  keyword: 'dessert sweets' },
           };
           const results = await Promise.all(types.map(async (t) => {
             const o = addonOverride[t];
@@ -398,7 +397,7 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
               ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng } : null;
             return {
               id: p.place_id, name: p.name,
-              category: t === 'flowers' ? 'Flower Shop' : t === 'dessert' ? 'Dessert' : 'Scenic Spot',
+              category: t === 'flowers' ? 'Flower Shop' : 'Dessert Stop',
               rating: p.rating ? parseFloat(p.rating).toFixed(1) : null,
               totalRatings: p.user_ratings_total || 0,
               vicinity: p.vicinity || '', location: placeLocation,
@@ -419,8 +418,15 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
         const searchRadius = fetchVibe === 'adventure' ? 20000 : 8000;
         const places    = await getPlacesByVibe(fetchVibe, { lat, lng }, { radius: searchRadius, maxResults: 15 });
 
+        // ✅ Exclude current item by both id AND name — covers Plan For Me edge cases
+        const currentItem = swapKey === 'food' ? plan.food : plan.activity;
         const filtered = places
-          .filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id)
+          .filter((p) => {
+            if (currentItem?.id   && p.id   === currentItem.id)   return false;
+            if (currentItem?.name && p.name === currentItem.name) return false;
+            if (p.id === plan.activity?.id || p.id === plan.food?.id) return false;
+            return true;
+          })
           .filter((p) => (p.rating || 0) >= 4.0 && (p.totalRatings || 0) >= 30)
           .sort((a, b) => {
             const scoreA = (a.rating || 0) * Math.log(Math.max(a.totalRatings || 1, 1));
@@ -430,7 +436,13 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
 
         const finalList = filtered.length > 0
           ? filtered
-          : places.filter((p) => p.id !== plan.activity?.id && p.id !== plan.food?.id).slice(0, 5);
+          : places
+              .filter((p) => {
+                if (currentItem?.id   && p.id   === currentItem.id)   return false;
+                if (currentItem?.name && p.name === currentItem.name) return false;
+                return true;
+              })
+              .slice(0, 5);
 
         setItems(finalList.map((p) => ({
           id: p.id, name: p.name,
@@ -819,7 +831,7 @@ export default function CartScreen() {
   });
   if (plan.addonItem) {
     const emoji = plan.addonType === 'flowers' ? '💐' : plan.addonType === 'dessert' ? '🍰' : '🌅';
-    const label = plan.addonType === 'flowers' ? 'Flowers' : plan.addonType === 'dessert' ? 'Dessert' : 'Scenic Stop';
+    const label = plan.addonType === 'flowers' ? 'Flowers' : 'Dessert Stop';
     timelineItems.push({
       key: 'addon', emoji, label,
       time: fmtHM(baseH + 3, 30),
@@ -1230,7 +1242,7 @@ const swap = StyleSheet.create({
 // ── Place detail sheet styles ────────────────────────────────
 const detail = StyleSheet.create({
   photoScroll:      { height: 220 },
-  photo:            { width: 300, height: 220 },
+  photo:            { width: SCREEN_W, height: 220 },
   photoPlaceholder: { height: 160, backgroundColor: colors.cream3, alignItems: 'center', justifyContent: 'center' },
   photoPlaceholderIcon: { fontSize: 40 },
   name:        { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, marginBottom: 4 },

@@ -84,7 +84,7 @@ export default function ProScreen() {
         </View>
 
         {/* Title */}
-        <Text style={styles.heroTitle}>Unlock Better{'\n'}Dates ✨</Text>
+        <Text style={styles.heroTitle}>Never stress about{'\n'}planning a date again.</Text>
         <Text style={styles.heroSub}>
           Keep things exciting, effortless,{'\n'}and unforgettable.
         </Text>

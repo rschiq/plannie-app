@@ -175,10 +175,22 @@ function UpcomingCard({ plan, onOpen, onCalendar, onDelete, onFavorite }) {
         </View>
       </TouchableOpacity>
       <View style={styles.cardFooter}>
-        <SmallButton label="Open"                             onPress={onOpen} />
-        <SmallButton label={plan.favorite ? '❤️ Saved' : '🤍 Fave'} onPress={onFavorite} />
-        <SmallButton label="📅 Cal"  onPress={onCalendar} variant="green" />
-        <SmallButton label="Delete"  onPress={onDelete}   variant="red" />
+        {/* Primary action — Open */}
+        <TouchableOpacity style={styles.openBtn} onPress={onOpen} activeOpacity={0.85}>
+          <Text style={styles.openBtnText}>Open</Text>
+        </TouchableOpacity>
+        {/* Secondary icon-only actions */}
+        <View style={styles.iconActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={onFavorite} activeOpacity={0.8}>
+            <Text style={styles.iconBtnText}>{plan.favorite ? '❤️' : '🤍'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={onCalendar} activeOpacity={0.8}>
+            <Text style={styles.iconBtnText}>📅</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDanger]} onPress={onDelete} activeOpacity={0.8}>
+            <Text style={styles.iconBtnText}>🗑️</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -438,7 +450,15 @@ const styles = StyleSheet.create({
   vibeBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   cardBody:      { padding: 16, paddingTop: 12, gap: 5 },
   cardItem:      { fontFamily: fonts.body, fontSize: 13, color: colors.gray },
-  cardFooter:    { flexDirection: 'row', gap: 8, padding: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.gray4, flexWrap: 'wrap' },
+  cardFooter:    { flexDirection: 'row', gap: 8, padding: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.gray4, alignItems: 'center' },
+  // Primary Open button
+  openBtn:       { flex: 1, backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  openBtnText:   { fontFamily: fonts.bodyMedium, fontSize: 14, color: '#F2EDE8' },
+  // Icon-only secondary actions
+  iconActions:   { flexDirection: 'row', gap: 6 },
+  iconBtn:       { width: 38, height: 38, borderRadius: 999, backgroundColor: colors.cream2, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.gray4 },
+  iconBtnDanger: { backgroundColor: 'rgba(255,100,100,0.08)', borderColor: 'rgba(255,100,100,0.20)' },
+  iconBtnText:   { fontSize: 16 },
 
   // ── Memory card ───────────────────────────────────────────
   memCard:       { borderRadius: radius.md, marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(201,169,110,0.18)', ...shadow.sm },

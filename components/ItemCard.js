@@ -170,31 +170,60 @@ export function ItemCard({ item, selected, onSelect, type = 'activity' }) {
 }
 
 export function AddonCard({ item, selected, onSelect }) {
+  const [showDetail, setShowDetail] = useState(false);
+
   return (
-    <SelectableCard
-      selected={selected}
-      onPress={() => onSelect(item)}
-      style={[styles.cardOuter, item.featured && styles.cardFeatured]}
-      innerStyle={styles.cardInner}
-    >
-      {item.featured && (
-        <View style={styles.featBadge}>
-          <Text style={styles.featBadgeText}>✦ Featured Spot</Text>
+    <>
+      <PlaceDetailModal visible={showDetail} item={item} onClose={() => setShowDetail(false)} />
+      <SelectableCard
+        selected={selected}
+        onPress={() => onSelect(item)}
+        style={[styles.cardOuter, item.featured && styles.cardFeatured]}
+        innerStyle={styles.cardInner}
+      >
+        {item.featured && (
+          <View style={styles.featBadge}>
+            <Text style={styles.featBadgeText}>✦ Featured Spot</Text>
+          </View>
+        )}
+        {selected && (
+          <View style={styles.checkCircle}>
+            <Text style={styles.checkText}>✓</Text>
+          </View>
+        )}
+
+        {/* ✅ Photo thumbnail if available */}
+        {item.photoUrl ? (
+          <Image source={{ uri: item.photoUrl }} style={styles.addonThumb} resizeMode="cover" />
+        ) : null}
+
+        <Text style={styles.cardTitle}>{item.name}</Text>
+        <Text style={styles.cardType}>{item.note}</Text>
+
+        {/* ✅ Location display */}
+        {item.shortLocation ? (
+          <Text style={styles.cardLocation}>📍 {item.shortLocation}</Text>
+        ) : item.desc ? (
+          <Text style={styles.cardDesc}>{item.desc}</Text>
+        ) : null}
+
+        <View style={styles.metaRow}>
+          {item.rating ? <Text style={styles.rating}>★ {item.rating}</Text> : null}
+          {item.dist   ? <Tag label={item.dist} /> : null}
         </View>
-      )}
-      {selected && (
-        <View style={styles.checkCircle}>
-          <Text style={styles.checkText}>✓</Text>
+
+        {/* ✅ View Details button */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.viewDetailsBtn}
+            onPress={(e) => { e.stopPropagation?.(); setShowDetail(true); }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.viewDetailsBtnText}>View Details</Text>
+          </TouchableOpacity>
         </View>
-      )}
-      <Text style={styles.cardTitle}>{item.name}</Text>
-      <Text style={styles.cardType}>{item.note}</Text>
-      <Text style={styles.cardDesc}>{item.desc}</Text>
-      <View style={styles.metaRow}>
-        {item.rating ? <Text style={styles.rating}>★ {item.rating}</Text> : null}
-        {item.dist   ? <Tag label={item.dist} /> : null}
-      </View>
-    </SelectableCard>
+      </SelectableCard>
+    </>
   );
 }
 
@@ -206,6 +235,8 @@ const styles = StyleSheet.create({
   featBadgeText:{ fontFamily: fonts.bodySemiBold, fontSize: 9, color: '#1C1628', letterSpacing: 0.7, textTransform: 'uppercase' },
   checkCircle:  { position: 'absolute', top: 16, right: 16, width: 26, height: 26, borderRadius: 13, backgroundColor: colors.rose, justifyContent: 'center', alignItems: 'center' },
   checkText:    { color: '#F2EDE8', fontSize: 13, fontFamily: fonts.bodySemiBold },
+  // ✅ Photo thumbnail for addon card
+  addonThumb:   { width: '100%', height: 140, borderRadius: 8, marginBottom: 12, backgroundColor: colors.cream3 },
   cardTitle:    { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, marginBottom: 2, paddingRight: 32 },
   cardType:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 4 },
   cardLocation: { fontFamily: fonts.body, fontSize: 12, color: colors.rose, marginBottom: 8 },
@@ -214,6 +245,9 @@ const styles = StyleSheet.create({
   rating:       { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold },
   popularText:  { fontFamily: fonts.bodyMedium, fontSize: 11, color: colors.rose, marginBottom: 6 },
   cardActions:  { flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.gray4 },
+  // ✅ View Details button style
+  viewDetailsBtn:     { flex: 1, backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  viewDetailsBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#F2EDE8' },
 });
 
 const dm = StyleSheet.create({

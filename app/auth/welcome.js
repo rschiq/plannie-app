@@ -1,48 +1,55 @@
 // app/auth/welcome.js
 // ─────────────────────────────────────────────────────────────
-// Plannie — Welcome / Auth Entry Screen
-// Connects to: login.js, signup.js
-// Firebase auth: wire up handlers marked with TODO
+// Plannie — Splash-style Welcome Screen
+// Requires: npx expo install @expo-google-fonts/baumans expo-font
 // ─────────────────────────────────────────────────────────────
 import { useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, Platform,
+  Animated, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { colors, fonts, radius } from '../../constants/theme';
+import { useFonts, Baumans_400Regular } from '@expo-google-fonts/baumans';
+import { fonts } from '../../constants/theme';
 
-const { height } = Dimensions.get('window');
-
-// ── Social button ─────────────────────────────────────────────
-function SocialButton({ label, icon, onPress, variant = 'dark' }) {
+// ── Animated auth button ──────────────────────────────────────
+function AuthButton({ label, icon, onPress, variant = 'primary' }) {
   const scale = useRef(new Animated.Value(1)).current;
+
   function onPressIn() {
     Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
   }
   function onPressOut() {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 8 }).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
   }
-  const bgColor = variant === 'gold'  ? colors.gold
-                : variant === 'white' ? '#F2EDE8'
-                : '#1E1C2C';
-  const txtColor = variant === 'dark' ? '#F2EDE8' : '#1C1628';
-  const borderColor = variant === 'dark'
-    ? 'rgba(242,237,232,0.12)'
-    : 'transparent';
+
+  // TERTIARY — plain text, no background
+  if (variant === 'tertiary') {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.6} style={s.tertiaryBtn}>
+        <Text style={s.tertiaryText}>{label}</Text>
+      </TouchableOpacity>
+    );
+  }
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      activeOpacity={1}
-    >
-      <Animated.View style={[s.socialBtn, { backgroundColor: bgColor, borderColor, transform: [{ scale }] }]}>
-        <Text style={s.socialIcon}>{icon}</Text>
-        <Text style={[s.socialLabel, { color: txtColor }]}>{label}</Text>
+    <TouchableOpacity onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} activeOpacity={1}>
+      <Animated.View
+        style={[
+          s.btn,
+          variant === 'primary' ? s.btnPrimary : s.btnSecondary,
+          { transform: [{ scale }] },
+        ]}
+      >
+        {icon ? <Text style={s.btnIcon}>{icon}</Text> : null}
+        <Text style={[
+          s.btnLabel,
+          variant === 'primary' ? s.btnLabelDark : s.btnLabelLight,
+        ]}>
+          {label}
+        </Text>
       </Animated.View>
     </TouchableOpacity>
   );
@@ -51,15 +58,17 @@ function SocialButton({ label, icon, onPress, variant = 'dark' }) {
 export default function WelcomeScreen() {
   const router = useRouter();
 
-  // ── Handlers — wire these up to Firebase later ────────────
+  // Load Baumans font
+  const [fontsLoaded] = useFonts({ Baumans_400Regular });
+
   function handleApple() {
     // TODO: await appleAuth.performRequest(...)
-    console.log('[Auth] Apple sign-in tapped');
+    console.log('[Auth] Apple tapped');
   }
 
   function handleGoogle() {
     // TODO: await Google.promptAsync(...)
-    console.log('[Auth] Google sign-in tapped');
+    console.log('[Auth] Google tapped');
   }
 
   function handleEmail() {
@@ -68,134 +77,210 @@ export default function WelcomeScreen() {
 
   return (
     <View style={s.root}>
-      {/* Full-screen gradient background */}
+      {/* ── Background — deep purple gradient matching splash ── */}
       <LinearGradient
-        colors={['#0A0814', '#12102A', '#0E0C1E']}
+        colors={['#2D1B4E', '#1A0F30', '#0D0818', '#060410']}
         style={StyleSheet.absoluteFill}
-        start={{ x: 0.3, y: 0 }}
-        end={{ x: 0.7, y: 1 }}
+        locations={[0, 0.35, 0.65, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
       />
 
-      {/* Decorative glow orb */}
-      <View style={s.orb} />
+      {/* Subtle top-center radial tint — matches reference image */}
+      <View style={s.topTint} />
 
       <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
 
-        {/* ── Hero ── */}
-        <View style={s.hero}>
-          {/* Logo mark */}
-          <View style={s.logoMark}>
-            <LinearGradient
-              colors={['#EEC49A', '#D4956F', '#B8743E']}
-              style={s.logoGrad}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={s.logoLetter}>P</Text>
-            </LinearGradient>
-          </View>
-
-          <Text style={s.appName}>Plannie</Text>
-          <Text style={s.heroTitle}>Plan better{'\n'}dates.</Text>
-          <Text style={s.heroSub}>Impress without the stress.</Text>
+        {/* ── TOP — floating P letter, no box, no circle ── */}
+        <View style={s.top}>
+          <Text style={[s.bigP, fontsLoaded && { fontFamily: 'Baumans_400Regular' }]}>P</Text>
         </View>
 
-        {/* ── Auth buttons ── */}
-        <View style={s.buttons}>
-          <SocialButton
+        {/* ── CENTER — "Plannie" + version ── */}
+        <View style={s.center}>
+          {/* "Plannie" — P in Baumans, "lannie" in Cormorant italic */}
+          <Text style={s.brandRow}>
+            <Text style={[
+              s.brandP,
+              fontsLoaded && { fontFamily: 'Baumans_400Regular' },
+            ]}>P</Text>
+            <Text style={s.brandRest}>lannie</Text>
+          </Text>
+
+          {/* Version number — subtle, bottom of center */}
+          <Text style={s.version}>v1.0</Text>
+        </View>
+
+        {/* ── BOTTOM — CTA buttons ── */}
+        <View style={s.bottom}>
+          {/* PRIMARY */}
+          <AuthButton
             label="Continue with Apple"
             icon="🍎"
             onPress={handleApple}
-            variant="white"
+            variant="primary"
           />
-          <SocialButton
+
+          {/* SECONDARY */}
+          <AuthButton
             label="Continue with Google"
             icon="G"
             onPress={handleGoogle}
-            variant="dark"
+            variant="secondary"
           />
 
-          {/* Divider */}
-          <View style={s.divider}>
-            <View style={s.divLine} />
-            <Text style={s.divText}>or</Text>
-            <View style={s.divLine} />
-          </View>
-
-          <SocialButton
+          {/* TERTIARY — text only */}
+          <AuthButton
             label="Continue with Email"
-            icon="✉️"
             onPress={handleEmail}
-            variant="gold"
+            variant="tertiary"
           />
 
+          {/* Sign up link */}
           <TouchableOpacity
-            style={s.signupLink}
             onPress={() => router.push('/auth/signup')}
-            activeOpacity={0.7}
+            activeOpacity={0.6}
+            style={s.signupRow}
           >
-            <Text style={s.signupLinkText}>
-              New here?{' '}
-              <Text style={s.signupLinkAccent}>Create an account</Text>
+            <Text style={s.signupText}>
+              New here?{'  '}
+              <Text style={s.signupAccent}>Create an account</Text>
             </Text>
           </TouchableOpacity>
+
+          {/* Legal */}
+          <Text style={s.legal}>
+            By continuing you agree to our Terms &amp; Privacy Policy.
+          </Text>
         </View>
 
-        {/* Fine print */}
-        <Text style={s.legal}>
-          By continuing you agree to our Terms of Service{'\n'}and Privacy Policy.
-        </Text>
       </SafeAreaView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0A0814' },
-  safe: { flex: 1, justifyContent: 'space-between' },
+  root: { flex: 1, backgroundColor: '#060410' },
+  safe: { flex: 1 },
 
-  // Decorative glow
-  orb: {
+  // Top-center purple glow tint (mimics the reference image radial)
+  topTint: {
     position: 'absolute',
-    top: height * 0.15,
-    left: '10%',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: 'rgba(212,149,111,0.07)',
+    top: -60,
+    alignSelf: 'center',
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    backgroundColor: 'rgba(120,60,180,0.18)',
   },
 
-  // ── Hero ──────────────────────────────────────────────────
-  hero:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  logoMark:   { marginBottom: 16, borderRadius: 22, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#D4956F', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 20 } }) },
-  logoGrad:   { width: 76, height: 76, alignItems: 'center', justifyContent: 'center' },
-  logoLetter: { fontFamily: fonts.display, fontSize: 44, color: '#1C1628', lineHeight: 52 },
-  appName:    { fontFamily: fonts.bodySemiBold, fontSize: 13, color: 'rgba(201,169,110,0.70)', letterSpacing: 3, textTransform: 'uppercase', marginBottom: 24 },
-  heroTitle:  { fontFamily: fonts.display, fontSize: 48, color: '#F2EDE8', textAlign: 'center', lineHeight: 54, marginBottom: 14 },
-  heroSub:    { fontFamily: fonts.body, fontSize: 16, color: 'rgba(242,237,232,0.45)', textAlign: 'center', lineHeight: 24 },
+  // ── TOP — P letter only, no box, no circle ──────────────────
+  top: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 0,
+  },
+  bigP: {
+    // Cormorant for the large centered P — elegant, like the reference
+    fontFamily: fonts.displayMedium,
+    fontSize: 140,
+    color: '#F2EDE8',
+    lineHeight: 120,
+    letterSpacing: -2,
+    // Subtle shadow for depth
+    ...Platform.select({
+      ios: {
+        textShadowColor: 'rgba(212,149,111,0.25)',
+        textShadowOffset: { width: 0, height: 4 },
+        textShadowRadius: 20,
+      },
+    }),
+  },
 
-  // ── Auth buttons ──────────────────────────────────────────
-  buttons: { paddingHorizontal: 24, gap: 12, paddingBottom: 8 },
-
-  socialBtn: {
-    flexDirection: 'row',
+  // ── CENTER — Brand name + version ───────────────────────────
+  center: {
+    flex: 0.8,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    paddingVertical: 17,
-    borderRadius: 999,
-    borderWidth: 1,
   },
-  socialIcon:  { fontSize: 18, width: 22, textAlign: 'center' },
-  socialLabel: { fontFamily: fonts.bodyMedium, fontSize: 15, letterSpacing: 0.2 },
+  brandRow: {
+    // Inline text — P in Baumans, rest in Cormorant italic
+    // Note: Text children can't mix inline styles perfectly in RN,
+    // so we use nested Text with different font families
+  },
+  brandP: {
+    // Falls back to Cormorant until Baumans loads
+    fontFamily: fonts.displayMedium,
+    fontSize: 42,
+    color: '#F2EDE8',
+    lineHeight: 50,
+  },
+  brandRest: {
+    fontFamily: fonts.displayItalic,
+    fontSize: 42,
+    color: 'rgba(212,149,111,0.85)',
+    lineHeight: 50,
+  },
+  version: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: 'rgba(242,237,232,0.22)',
+    letterSpacing: 1,
+  },
 
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
-  divLine: { flex: 1, height: 1, backgroundColor: 'rgba(242,237,232,0.08)' },
-  divText: { fontFamily: fonts.body, fontSize: 12, color: 'rgba(242,237,232,0.30)' },
+  // ── BOTTOM — Buttons ─────────────────────────────────────────
+  bottom: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 28,
+    paddingBottom: 8,
+    gap: 10,
+  },
 
-  signupLink:       { alignItems: 'center', paddingVertical: 10 },
-  signupLinkText:   { fontFamily: fonts.body, fontSize: 14, color: 'rgba(242,237,232,0.40)' },
-  signupLinkAccent: { color: colors.gold, fontFamily: fonts.bodyMedium },
+  btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 999,
+  },
+  btnPrimary: {
+    backgroundColor: '#F2EDE8',
+  },
+  btnSecondary: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(242,237,232,0.10)',
+  },
+  btnIcon:       { fontSize: 17, width: 22, textAlign: 'center' },
+  btnLabel:      { fontFamily: fonts.bodyMedium, fontSize: 15, letterSpacing: 0.1 },
+  btnLabelDark:  { color: '#1C1628' },
+  btnLabelLight: { color: '#F2EDE8' },
 
-  legal: { fontFamily: fonts.body, fontSize: 11, color: 'rgba(242,237,232,0.22)', textAlign: 'center', lineHeight: 17, paddingHorizontal: 32, paddingBottom: 8 },
+  // Tertiary
+  tertiaryBtn:  { alignItems: 'center', paddingVertical: 6 },
+  tertiaryText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: 'rgba(242,237,232,0.30)',
+    letterSpacing: 0.2,
+  },
+
+  // Sign up
+  signupRow:    { alignItems: 'center', paddingVertical: 2 },
+  signupText:   { fontFamily: fonts.body, fontSize: 13, color: 'rgba(242,237,232,0.28)' },
+  signupAccent: { fontFamily: fonts.bodyMedium, color: 'rgba(212,149,111,0.65)' },
+
+  // Legal
+  legal: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: 'rgba(242,237,232,0.15)',
+    textAlign: 'center',
+    lineHeight: 15,
+    paddingBottom: 4,
+  },
 });

@@ -13,16 +13,14 @@ import { AnimatedPrimaryButton, AnimatedOutlineButton } from '../../components/S
 // ─── Removed ADDONS import — no more hardcoded LA fallback data ───
 
 const ADDON_OPTIONS = [
-  { key: 'flowers', emoji: '💐', title: 'Flowers', sub: 'Pick up a bouquet on the way', label: '💐 Flower Shops Nearby' },
+  { key: 'flowers', emoji: '💐', title: 'Flowers',      sub: 'Pick up a bouquet on the way',   label: '💐 Flower Shops Nearby' },
   { key: 'dessert', emoji: '🍰', title: 'Dessert Stop', sub: 'Sweet ending to a perfect night', label: '🍰 Dessert Stops Nearby' },
-  { key: 'scenic', emoji: '🌅', title: 'Scenic Stop', sub: 'A photo-worthy moment together', label: '🌅 Scenic Spots Nearby' },
 ];
 
 // Specific search config per addon type
 const ADDON_SEARCH_CONFIG = {
   flowers: { type: 'florist', keyword: 'flower shop bouquet' },
   dessert: { type: 'bakery',  keyword: 'dessert cake ice cream sweets' },
-  scenic:  { type: 'park',    keyword: 'scenic park viewpoint nature' },
 };
 
 function calcDistMiles(from, to) {
@@ -97,10 +95,11 @@ export default function AddonsScreen() {
         .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
         .slice(0, 4);
 
-      // Step 5 — map to the shape AddonCard expects
+      // Step 5 — map to the shape AddonCard + PlaceDetailModal expects
       const mapped = sorted.map((p) => ({
-        id: p.place_id,
-        name: p.name,
+        id:           p.place_id,
+        place_id:     p.place_id,
+        name:         p.name,
         type,
         note: p.rating >= 4.8 ? 'Top rated'
             : p.opening_hours?.open_now ? 'Open now'
@@ -109,10 +108,28 @@ export default function AddonsScreen() {
         desc: p.vicinity
           ? p.vicinity.split(',').slice(0, 2).join(',').trim()
           : 'Near your location',
-        rating: p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
+        // ✅ shortLocation for display
+        shortLocation: p.vicinity
+          ? p.vicinity.split(',')[0].trim()
+          : 'Near your location',
+        address:      p.vicinity || '',
+        rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
+        totalRatings: p.user_ratings_total || 0,
+        isOpenNow:    p.opening_hours?.open_now ?? null,
         dist: p.geometry?.location
           ? calcDistMiles({ lat, lng }, p.geometry.location) + ' mi'
           : '',
+        distance: p.geometry?.location
+          ? calcDistMiles({ lat, lng }, p.geometry.location)
+          : null,
+        // ✅ location needed for Maps + detail modal
+        location: p.geometry?.location
+          ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng }
+          : null,
+        // ✅ photoUrl for thumbnail in card
+        photoUrl: p.photos?.[0]?.photo_reference
+          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photos[0].photo_reference}&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w`
+          : null,
         featured: (p.rating ?? 0) >= 4.5,
       }));
 

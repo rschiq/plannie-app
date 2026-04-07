@@ -81,36 +81,36 @@ export const VIBE_CONFIG = {
   chill: {
     emoji: '☕',
     label: 'Chill',
-    // Cafes, parks, cinemas — slow, cozy, easy
-    types: ['cafe', 'movie_theater', 'park', 'spa'],
-    keywords: ['coffee shop', 'scenic park', 'bookstore cafe', 'spa day'],
+    // Slow, cozy, easy — cafes, parks, cinemas, bookstores
+    types: ['cafe', 'movie_theater', 'park', 'spa', 'shopping_mall'],
+    keywords: ['coffee shop', 'cozy cafe', 'bookstore', 'park walk', 'tea house', 'cinema'],
     color: '#A8DADC',
   },
   fun: {
     emoji: '🎉',
     label: 'Fun',
-    // Bowling, clubs — playful and loud
-    types: ['bowling_alley', 'night_club', 'amusement_park'],
-    keywords: ['karaoke', 'comedy club', 'arcade games', 'dance club'],
+    // Playful, loud, joyful — arcades, bowling, karaoke
+    types: ['bowling_alley', 'amusement_park', 'night_club'],
+    keywords: ['arcade games', 'karaoke bar', 'bowling alley', 'billiards pool', 'mini golf', 'comedy club', 'dance club'],
     color: '#FFB347',
   },
   romantic: {
     emoji: '💕',
     label: 'Romantic',
-    // Restaurants, bars, parks — dreamy and intimate
-    types: ['restaurant', 'bar', 'park', 'art_gallery'],
-    keywords: ['rooftop bar', 'wine bar', 'scenic viewpoint', 'botanical garden', 'jazz bar'],
+    // Dreamy, intimate — fine dining, wine bars, rooftops, scenic views
+    types: ['restaurant', 'bar', 'art_gallery', 'museum'],
+    keywords: ['rooftop bar', 'wine bar', 'fine dining', 'romantic restaurant', 'jazz bar', 'botanical garden', 'scenic viewpoint'],
     color: '#FF8FAB',
   },
   adventure: {
     emoji: '🏕️',
     label: 'Adventure',
-    // Keyword-only — avoids generic tourist_attraction results
+    // Active, exciting — escape rooms, climbing, go-karts, outdoor
     types: [],
     keywords: [
-      'go kart', 'escape room', 'axe throwing', 'arcade',
-      'vr gaming', 'shooting range', 'topgolf',
-      'trampoline park', 'climbing gym', 'paintball', 'laser tag',
+      'escape room', 'go kart', 'axe throwing', 'rock climbing gym',
+      'vr gaming', 'trampoline park', 'paintball', 'laser tag',
+      'kayaking', 'hiking trail', 'topgolf', 'shooting range',
     ],
     keywordsOnly: true,
     color: '#90BE6D',

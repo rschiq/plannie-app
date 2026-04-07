@@ -320,8 +320,8 @@ export default function HowScreen() {
           {/* ── Manual Card ── */}
           <TouchableOpacity style={styles.manualCard} onPress={chooseManual} activeOpacity={0.85}>
             <Text style={styles.cardIcon}>🛠️</Text>
-            <Text style={styles.cardTitleDark}>Build it{'\n'}myself</Text>
-            <Text style={styles.cardSubDark}>Pick each part{'\n'}step by step</Text>
+            <Text style={styles.cardTitleDark}>Build My{'\n'}Date</Text>
+            <Text style={styles.cardSubDark}>Pick each step{'\n'}yourself</Text>
             <View style={styles.badgeMuted}>
               <Text style={styles.badgeMutedText}>MANUAL</Text>
             </View>
@@ -336,7 +336,7 @@ export default function HowScreen() {
               end={{ x: 1, y: 1 }}
             >
               <Text style={styles.cardIcon}>✨</Text>
-              <Text style={styles.cardTitleLight}>Plan it{'\n'}for me</Text>
+              <Text style={styles.cardTitleLight}>Plan For{'\n'}Me</Text>
               <Text style={styles.cardSubLight}>Full plan in{'\n'}seconds</Text>
               <View style={styles.badgeGold}>
                 <Text style={styles.badgeGoldText}>✦ SMART</Text>
@@ -345,18 +345,7 @@ export default function HowScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Surprise Me — dark with gold text ── */}
-        <TouchableOpacity style={styles.surpriseBtn} onPress={doSurprise} activeOpacity={0.85}>
-          {/* ✅ Explicit dark gradient — NOT colors.charcoal */}
-          <LinearGradient
-            colors={['#221F32', '#1A1828']}
-            style={styles.surpriseInner}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Text style={styles.surpriseBtnText}>🎲  Surprise Me — generate a random plan</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* ── Surprise Me — moved inside Plan For Me ── */}
 
         <View style={{ height: 40 }} />
       </ScrollView>
