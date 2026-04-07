@@ -6,13 +6,22 @@
 import { useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Platform,
+  Animated, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useFonts, Baumans_400Regular } from '@expo-google-fonts/baumans';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
 import { fonts } from '../../constants/theme';
+
+// Required for expo-auth-session to work on iOS/Android
+WebBrowser.maybeCompleteAuthSession();
 
 // ── Animated auth button ──────────────────────────────────────
 function AuthButton({ label, icon, onPress, variant = 'primary' }) {
@@ -61,14 +70,52 @@ export default function WelcomeScreen() {
   // Load Baumans font
   const [fontsLoaded] = useFonts({ Baumans_400Regular });
 
+  // ── Google Auth Session ────────────────────────────────────
+  // Replace the placeholder IDs with your real Google OAuth client IDs
+  // from https://console.cloud.google.com/apis/credentials
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId:     'YOUR_IOS_CLIENT_ID',
+    androidClientId: '147011410264-jbt4i39tevdu9er4r8d94u2khm7qq968.apps.googleusercontent.com',
+    webClientId:     '147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com',
+  });
+
+  // Handle the response from Google
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      handleGoogleCredential(id_token);
+    } else if (response?.type === 'error') {
+      Alert.alert('Google Sign-In Error', response.error?.message || 'Something went wrong.');
+    }
+  }, [response]);
+
+  async function handleGoogleCredential(idToken) {
+    try {
+      // Sign in to Firebase with the Google credential
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      const user = userCredential.user;
+
+      console.log('[Google Auth] Signed in:', user.displayName, user.email);
+
+      // Save login state
+      await AsyncStorage.setItem('@plannie_is_logged_in', 'true');
+      await AsyncStorage.setItem('@plannie_user_email', user.email || '');
+
+      router.replace('/');
+    } catch (e) {
+      console.log('[Google Auth] Error:', e.message);
+      Alert.alert('Sign-In Failed', e.message);
+    }
+  }
+
   function handleApple() {
     // TODO: await appleAuth.performRequest(...)
     console.log('[Auth] Apple tapped');
   }
 
   function handleGoogle() {
-    // TODO: await Google.promptAsync(...)
-    console.log('[Auth] Google tapped');
+    promptAsync();
   }
 
   function handleEmail() {
@@ -93,7 +140,7 @@ export default function WelcomeScreen() {
 
         {/* ── TOP — floating P letter, no box, no circle ── */}
         <View style={s.top}>
-          <Text style={[s.bigP, fontsLoaded && { fontFamily: 'Baumans_400Regular' }]}>P</Text>
+          <Text style={s.bigP}>P</Text>
         </View>
 
         {/* ── CENTER — "Plannie" + version ── */}
@@ -184,7 +231,7 @@ const s = StyleSheet.create({
   bigP: {
     // Cormorant for the large centered P — elegant, like the reference
     fontFamily: fonts.displayMedium,
-    fontSize: 140,
+    fontSize: 110,
     color: '#F2EDE8',
     lineHeight: 120,
     letterSpacing: -2,

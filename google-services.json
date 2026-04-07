@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "147011410264",
+    "project_id": "plannie-app-a28bc",
+    "storage_bucket": "plannie-app-a28bc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:147011410264:android:aa6c23be6d2dcf147e6d2d",
+        "android_client_info": {
+          "package_name": "com.plannie.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "147011410264-jbt4i39tevdu9er4r8d94u2khm7qq968.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.plannie.app",
+            "certificate_hash": "b77d4c579fd41981553f494b576487f9079d8ccf"
+          }
+        },
+        {
+          "client_id": "147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmAE2FU5KRla0n7LEA4XpVUMBItjyqNj0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
