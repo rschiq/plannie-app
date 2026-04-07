@@ -4,7 +4,7 @@ import { colors, fonts, radius, shadow } from '../constants/theme';
 import { Tag, SmallButton } from './UI';
 import { SelectableCard } from './SelectableCard';
 
-const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 function shortenAddress(address = '') {
   if (!address) return '';

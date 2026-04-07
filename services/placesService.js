@@ -5,7 +5,7 @@
 // distance logic, category cleanup, curation labels
 // ─────────────────────────────────────────────────────────────
 
-const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const BASE_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
 
 // ─────────────────────────────────────────────────────────────

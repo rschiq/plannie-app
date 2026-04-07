@@ -13,7 +13,7 @@ import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
 import { SelectableCard } from '../../components/SelectableCard';
 import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
 
-const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 const BUDGETS = [
   { key: '$',   label: 'Keep It Simple', desc: 'Great dates on a budget', emoji: '💚' },

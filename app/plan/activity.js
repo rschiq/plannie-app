@@ -1,6 +1,6 @@
 // app/plan/activity.js
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
@@ -14,19 +14,17 @@ const VIBE_MAP = {
   Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure',
 };
 
-// Radius per vibe — tight around selected neighborhood
-// Adventure needs wider net since escape rooms are sparse
 const VIBE_RADIUS = {
   chill: 2000, fun: 2000, romantic: 2000,
   adventure: 15000, foodie: 2000,
 };
 
 function getTag(p) {
-  if (p.rating >= 4.8)                         return 'Top rated';
-  if (p.totalRatings > 1000)                   return 'Popular';
-  if (p.isOpenNow === true)                    return 'Open now';
-  if (p.priceLevel === 0 || p.priceLevel === 1)return 'Budget friendly';
-  if (p.rating >= 4.5)                         return 'Highly rated';
+  if (p.rating >= 4.8)                          return 'Top rated';
+  if (p.totalRatings > 1000)                    return 'Popular';
+  if (p.isOpenNow === true)                     return 'Open now';
+  if (p.priceLevel === 0 || p.priceLevel === 1) return 'Budget friendly';
+  if (p.rating >= 4.5)                          return 'Highly rated';
   return 'Nearby';
 }
 
@@ -54,32 +52,43 @@ export default function ActivityScreen() {
 
   async function loadPlaces() {
     setLoading(true);
+
     try {
-      const vibe   = VIBE_MAP[plan.vibe] || 'chill';
+      const vibe         = VIBE_MAP[plan.vibe] || 'chill';
       const searchRadius = VIBE_RADIUS[vibe] ?? 2000;
 
-      // ✅ CRITICAL: Always use stored coords from autocomplete selection.
-      // Never geocode city name — "Studio City" geocodes to a broad LA area,
-      // returning results from Burbank, Hollywood, etc.
-      // If no coords (unlikely), show fallback data — don't guess location.
-      if (!plan.coords?.lat || !plan.coords?.lng) {
-        console.log('[Activity] No coords stored — using local fallback data');
+      let lat, lng;
+
+      if (plan.coords?.lat && plan.coords?.lng) {
+        lat = plan.coords.lat;
+        lng = plan.coords.lng;
+      } else if (plan.city) {
+        // Geocode the city name as fallback
+        const geoRes  = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(plan.city)}&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w`
+        );
+        const geoData = await geoRes.json();
+        if (geoData.status === 'OK') {
+          lat = geoData.results[0].geometry.location.lat;
+          lng = geoData.results[0].geometry.location.lng;
+        } else {
+          Alert.alert('Geocode Failed', `status: ${geoData.status}`);
+          setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
+          setLoading(false);
+          return;
+        }
+      } else {
         setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
         setLoading(false);
         return;
       }
 
-      const { lat, lng } = plan.coords;
-
-      // Extract area name for local boost — "Studio City, Los Angeles" → "Studio City"
       const selectedArea = (plan.city || '').split(',')[0].trim();
 
-      // First pass — tight radius around selected neighborhood
       let places = await getPlacesByVibe(vibe, { lat, lng }, {
         radius: searchRadius, maxResults: 12, selectedArea,
       });
 
-      // Widen gradually if sparse — but never to full city level
       if (places.length < 4 && vibe !== 'adventure') {
         places = await getPlacesByVibe(vibe, { lat, lng }, {
           radius: 5000, maxResults: 12, selectedArea,
@@ -92,7 +101,6 @@ export default function ActivityScreen() {
       }
 
       if (places.length > 0) {
-        // PART 5: enrich photos for any place missing them (parallel, capped at 4)
         const needsPhoto = places.filter(p => !p.photoUrl).slice(0, 4);
         if (needsPhoto.length > 0) {
           await Promise.allSettled(needsPhoto.map(async p => {
@@ -103,7 +111,6 @@ export default function ActivityScreen() {
 
         const mapped = places.map(p => {
           const dist = p.distanceMiles ?? calcDistMiles({ lat, lng }, p.location);
-          // PART 6: consistent full data object
           return {
             id:            p.id,
             place_id:      p.id,
@@ -130,14 +137,14 @@ export default function ActivityScreen() {
         return;
       }
     } catch (e) {
-      console.log('Places API failed, using local data:', e.message);
+      Alert.alert('Error', e.message);
     }
     setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
     setLoading(false);
   }
 
-  function handleAdd() { updatePlan({ activity: selected }); router.push('/plan/food-ask'); }
-  function handleSkip() { updatePlan({ activity: null });   router.push('/plan/food-ask'); }
+  function handleAdd()  { updatePlan({ activity: selected }); router.push('/plan/food-ask'); }
+  function handleSkip() { updatePlan({ activity: null });     router.push('/plan/food-ask'); }
 
   const btnLabel = selected
     ? `✓ Add "${selected.name.split(' ').slice(0, 3).join(' ')}" →`

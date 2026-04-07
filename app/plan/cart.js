@@ -82,7 +82,7 @@ function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
-const GOOGLE_API_KEY = 'AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 // Readable type labels from raw Google types
 const TYPE_MAP = {
@@ -693,28 +693,81 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
   );
 }
 
-// ─── Timeline Item ────────────────────────────────────────────
-function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, rating, distance, isOpenNow }) {
+// ─── Summary Card ─────────────────────────────────────────────
+// Rich plan item card: photo thumb, rating, distance, tags, why, View Details
+function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, onViewDetails,
+  rating, distance, isOpenNow, shortLocation, curationLabel, photoUrl }) {
+
+  // Build category tags from label + sub
+  const tags = [sub, isOpenNow === true ? 'Open now' : null].filter(Boolean);
+
   return (
-    <TouchableOpacity style={styles.tiRow} onPress={onTap} activeOpacity={0.75}>
+    <View style={styles.tiRow}>
+      {/* ── Left column: dot + line ── */}
       <View style={styles.tiLeft}>
         <View style={styles.tiDot}><Text style={styles.tiEmoji}>{emoji}</Text></View>
         {!isLast && <View style={styles.tiLine} />}
       </View>
-      <View style={[styles.tiContent, !isLast && { paddingBottom: 28 }]}>
-        <Text style={styles.tiTime}>{time} · {label}</Text>
-        <Text style={styles.tiName}>{name}</Text>
-        {sub ? <Text style={styles.tiSub}>{sub}</Text> : null}
-        {(rating || distance) && (
-          <View style={styles.tiMeta}>
-            {rating && <Text style={styles.tiRating}>⭐ {rating}</Text>}
-            {rating && distance && <Text style={styles.tiDot2}> · </Text>}
-            {distance && <Text style={styles.tiDistance}>{distance} mi</Text>}
+
+      {/* ── Card ── */}
+      <View style={[styles.tiCard, !isLast && { marginBottom: 16 }]}>
+        {/* Thumbnail + header row */}
+        <TouchableOpacity onPress={onTap} activeOpacity={0.85}>
+          <View style={styles.tiCardHeader}>
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.tiThumb} resizeMode="cover" />
+            ) : (
+              <View style={[styles.tiThumb, styles.tiThumbEmpty]}>
+                <Text style={{ fontSize: 22 }}>{emoji}</Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tiTime}>{time} · {label}</Text>
+              <Text style={styles.tiName} numberOfLines={2}>{name}</Text>
+              {/* Location */}
+              {shortLocation ? (
+                <Text style={styles.tiLocation}>📍 {shortLocation}</Text>
+              ) : null}
+            </View>
           </View>
-        )}
-        {isOpenNow === true && <Text style={styles.tiOpen}>Open now</Text>}
+        </TouchableOpacity>
+
+        {/* Rating + distance */}
+        {(rating || distance) ? (
+          <View style={styles.tiMeta}>
+            {rating ? <Text style={styles.tiRating}>⭐ {rating}</Text> : null}
+            {rating && distance ? <Text style={styles.tiDot2}> · </Text> : null}
+            {distance ? <Text style={styles.tiDistance}>🚗 {distance} mi away</Text> : null}
+          </View>
+        ) : null}
+
+        {/* Category tags */}
+        {tags.length > 0 ? (
+          <View style={styles.tiTags}>
+            {tags.map((t, i) => (
+              <View key={i} style={styles.tiTag}>
+                <Text style={styles.tiTagText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Why this place */}
+        {curationLabel ? (
+          <Text style={styles.tiWhy}>{curationLabel}</Text>
+        ) : null}
+
+        {/* Actions row */}
+        <View style={styles.tiActions}>
+          <TouchableOpacity style={styles.tiActionBtn} onPress={onViewDetails} activeOpacity={0.8}>
+            <Text style={styles.tiActionBtnText}>View Details</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tiActionBtnOutline} onPress={onTap} activeOpacity={0.8}>
+            <Text style={styles.tiActionBtnOutlineText}>🔄 Swap</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -725,6 +778,7 @@ export default function CartScreen() {
 
   const [swapKey, setSwapKey]               = useState(null);
   const [activeItem, setActiveItem]         = useState(null);
+  const [detailItem, setDetailItem]         = useState(null);  // for View Details modal
   const [isSaved, setIsSaved]               = useState(false);
   const [isSpecial, setIsSpecial]           = useState(false);
   const [specialTitle, setSpecialTitle]     = useState('');
@@ -747,6 +801,9 @@ export default function CartScreen() {
     address: plan.activity.address, isOpenNow: plan.activity.isOpenNow,
     location: plan.activity.location, id: plan.activity.id,
     distance: plan.activity.distance,
+    shortLocation: plan.activity.shortLocation || '',
+    curationLabel: plan.activity.curationLabel || '',
+    photoUrl: plan.activity.photoUrl || null,
   });
   if (plan.food) timelineItems.push({
     key: 'food', emoji: '🍽️', label: 'Dinner',
@@ -756,6 +813,9 @@ export default function CartScreen() {
     address: plan.food.address, isOpenNow: plan.food.isOpenNow,
     location: plan.food.location, id: plan.food.id,
     distance: plan.food.distance,
+    shortLocation: plan.food.shortLocation || '',
+    curationLabel: plan.food.curationLabel || '',
+    photoUrl: plan.food.photoUrl || null,
   });
   if (plan.addonItem) {
     const emoji = plan.addonType === 'flowers' ? '💐' : plan.addonType === 'dessert' ? '🍰' : '🌅';
@@ -769,8 +829,21 @@ export default function CartScreen() {
       isOpenNow: plan.addonItem.isOpenNow,
       location: plan.addonItem.location, id: plan.addonItem.id,
       distance: plan.addonItem.distance,
+      shortLocation: plan.addonItem.shortLocation || '',
+      curationLabel: plan.addonItem.curationLabel || '',
+      photoUrl: plan.addonItem.photoUrl || null,
     });
   }
+
+  // ── "Why this plan works" bullets ────────────────────────────
+  const whyBullets = [];
+  if (plan.vibe)     whyBullets.push(`✦ Curated for a ${plan.vibe.toLowerCase()} vibe from start to finish`);
+  if (plan.activity && plan.food) whyBullets.push('✦ Activity and dinner are close together — no long drives');
+  if (plan.activity) whyBullets.push(`✦ ${plan.activity.name} is highly rated and fits the mood`);
+  if (plan.food)     whyBullets.push(`✦ ${plan.food.name} pairs perfectly as a follow-up`);
+  if (plan.addonItem)whyBullets.push(`✦ ${plan.addonItem.name} rounds out the night beautifully`);
+  if (plan.budget === '$$$') whyBullets.push('✦ Premium picks selected for a special night out');
+  else if (plan.budget === '$') whyBullets.push('✦ Great value spots — quality without overspending');
 
   function removeItem(key) {
     if (key === 'activity') updatePlan({ activity: null });
@@ -877,6 +950,16 @@ export default function CartScreen() {
           </View>
         </LinearGradient>
 
+        {/* ── Why this plan works ── */}
+        {whyBullets.length > 0 && (
+          <View style={styles.whySection}>
+            <Text style={styles.whyTitle}>Why this plan works</Text>
+            {whyBullets.slice(0, 4).map((b, i) => (
+              <Text key={i} style={styles.whyBullet}>{b}</Text>
+            ))}
+          </View>
+        )}
+
         {/* ── Timeline ── */}
         {timelineItems.length > 0 ? (
           <View style={styles.timeline}>
@@ -891,8 +974,12 @@ export default function CartScreen() {
                 rating={item.rating}
                 distance={item.distance}
                 isOpenNow={item.isOpenNow}
+                shortLocation={item.shortLocation}
+                curationLabel={item.curationLabel}
+                photoUrl={item.photoUrl}
                 isLast={idx === timelineItems.length - 1}
                 onTap={() => setActiveItem(item)}
+                onViewDetails={() => setDetailItem(item)}
               />
             ))}
           </View>
@@ -945,7 +1032,7 @@ export default function CartScreen() {
               />
             )}
             <TouchableOpacity style={styles.btnPrimary} onPress={handleSave} activeOpacity={0.88}>
-              <Text style={styles.btnPrimaryText}>✦ Save This Plan</Text>
+              <Text style={styles.btnPrimaryText}>✦ Save & Start This Date</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -957,6 +1044,15 @@ export default function CartScreen() {
         onClose={() => setActiveItem(null)}
         onSwap={() => { setSwapKey(activeItem?.key); setActiveItem(null); }}
         onRemove={() => removeItem(activeItem?.key)}
+      />
+
+      {/* ── View Details modal (same as swap preview detail view) ── */}
+      <PlaceDetailSheet
+        visible={!!detailItem}
+        place={detailItem}
+        swapKey={detailItem?.key}
+        onConfirm={() => setDetailItem(null)}
+        onClose={() => setDetailItem(null)}
       />
 
       <SwapSheet
@@ -989,20 +1085,47 @@ const styles = StyleSheet.create({
 
   // ── Timeline ────────────────────────────────────────────────
   timeline: { padding: 24, paddingBottom: 8 },
-  tiRow:    { flexDirection: 'row', gap: 14 },
+  tiRow:    { flexDirection: 'row', gap: 14, marginBottom: 4 },
   tiLeft:   { alignItems: 'center', width: 40 },
   tiDot:    { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.cream2, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
   tiEmoji:  { fontSize: 18 },
   tiLine:   { flex: 1, width: 2, backgroundColor: colors.cream2, marginTop: 4 },
-  tiContent:{ flex: 1, paddingBottom: 8 },
-  tiTime:   { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.gray2, marginBottom: 2 },
-  tiName:   { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 2 },
-  tiSub:    { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  tiMeta:   { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  tiRating: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold },
-  tiDot2:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
-  tiDistance:{ fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  tiOpen:   { fontFamily: fonts.bodyMedium, fontSize: 11, color: '#5BBF85', marginTop: 3 },
+
+  // Rich summary card
+  tiCard:   { flex: 1, backgroundColor: colors.cream2, borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4, marginBottom: 4 },
+  tiCardHeader: { flexDirection: 'row', gap: 12, padding: 14, paddingBottom: 10 },
+  tiThumb:  { width: 72, height: 72, borderRadius: 10, backgroundColor: colors.cream3, flexShrink: 0 },
+  tiThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+
+  tiTime:     { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.gray2, marginBottom: 3 },
+  tiName:     { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 2, lineHeight: 20 },
+  tiLocation: { fontFamily: fonts.body, fontSize: 11, color: colors.rose, marginTop: 2 },
+
+  tiMeta:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 8 },
+  tiRating:   { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.gold },
+  tiDot2:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
+  tiDistance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  tiOpen:     { fontFamily: fonts.bodyMedium, fontSize: 11, color: '#5BBF85', marginTop: 3 },
+
+  // Category tags
+  tiTags: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', paddingHorizontal: 14, marginBottom: 8 },
+  tiTag:  { backgroundColor: 'rgba(201,169,110,0.12)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(201,169,110,0.20)' },
+  tiTagText: { fontFamily: fonts.bodySemiBold, fontSize: 10, color: colors.gold, letterSpacing: 0.3 },
+
+  // Why this place
+  tiWhy: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, paddingHorizontal: 14, marginBottom: 12, lineHeight: 18, fontStyle: 'italic' },
+
+  // Action buttons inside card
+  tiActions: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: colors.gray4, paddingTop: 12 },
+  tiActionBtn: { flex: 1, backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  tiActionBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#F2EDE8' },
+  tiActionBtnOutline: { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.gray4 },
+  tiActionBtnOutlineText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
+
+  // ── Why this plan works ─────────────────────────────────────
+  whySection: { marginHorizontal: 24, marginTop: 20, marginBottom: 4, backgroundColor: 'rgba(201,169,110,0.08)', borderRadius: radius.md, padding: 18, borderWidth: 1, borderColor: 'rgba(201,169,110,0.18)' },
+  whyTitle:   { fontFamily: fonts.bodySemiBold, fontSize: 13, color: colors.gold, marginBottom: 10, letterSpacing: 0.3 },
+  whyBullet:  { fontFamily: fonts.body, fontSize: 13, color: colors.gray, lineHeight: 22, marginBottom: 2 },
 
   // ── Empty ───────────────────────────────────────────────────
   empty:      { padding: 44, alignItems: 'center' },

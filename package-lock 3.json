@@ -21,8 +21,8 @@
         "expo-router": "~6.0.23",
         "expo-status-bar": "~3.0.9",
         "firebase": "^12.11.0",
-        "react": "19.1.0",
-        "react-dom": "19.1.0",
+        "react": "^19.1.0",
+        "react-dom": "^19.1.0",
         "react-native": "0.81.5",
         "react-native-safe-area-context": "~5.6.0",
         "react-native-screens": "~4.16.0",
@@ -1612,6 +1612,93 @@
       "resolved": "https://registry.npmjs.org/@expo-google-fonts/dm-sans/-/dm-sans-0.4.2.tgz",
       "integrity": "sha512-e/fLH5aCJzkEenz7axvEn8N7IJAKhUwNjIxS75h9j+Ip1M9S7d22M19gJN3A7QW4egVkBJRyQh1hQFhngQn9yA==",
       "license": "MIT AND OFL-1.1"
+    },
+    "node_modules/@expo/cli": {
+      "version": "54.0.23",
+      "resolved": "https://registry.npmjs.org/@expo/cli/-/cli-54.0.23.tgz",
+      "integrity": "sha512-km0h72SFfQCmVycH/JtPFTVy69w6Lx1cHNDmfLfQqgKFYeeHTjx7LVDP4POHCtNxFP2UeRazrygJhlh4zz498g==",
+      "license": "MIT",
+      "dependencies": {
+        "@0no-co/graphql.web": "^1.0.8",
+        "@expo/code-signing-certificates": "^0.0.6",
+        "@expo/config": "~12.0.13",
+        "@expo/config-plugins": "~54.0.4",
+        "@expo/devcert": "^1.2.1",
+        "@expo/env": "~2.0.8",
+        "@expo/image-utils": "^0.8.8",
+        "@expo/json-file": "^10.0.8",
+        "@expo/metro": "~54.2.0",
+        "@expo/metro-config": "~54.0.14",
+        "@expo/osascript": "^2.3.8",
+        "@expo/package-manager": "^1.9.10",
+        "@expo/plist": "^0.4.8",
+        "@expo/prebuild-config": "^54.0.8",
+        "@expo/schema-utils": "^0.1.8",
+        "@expo/spawn-async": "^1.7.2",
+        "@expo/ws-tunnel": "^1.0.1",
+        "@expo/xcpretty": "^4.3.0",
+        "@react-native/dev-middleware": "0.81.5",
+        "@urql/core": "^5.0.6",
+        "@urql/exchange-retry": "^1.3.0",
+        "accepts": "^1.3.8",
+        "arg": "^5.0.2",
+        "better-opn": "~3.0.2",
+        "bplist-creator": "0.1.0",
+        "bplist-parser": "^0.3.1",
+        "chalk": "^4.0.0",
+        "ci-info": "^3.3.0",
+        "compression": "^1.7.4",
+        "connect": "^3.7.0",
+        "debug": "^4.3.4",
+        "env-editor": "^0.4.1",
+        "expo-server": "^1.0.5",
+        "freeport-async": "^2.0.0",
+        "getenv": "^2.0.0",
+        "glob": "^13.0.0",
+        "lan-network": "^0.1.6",
+        "minimatch": "^9.0.0",
+        "node-forge": "^1.3.3",
+        "npm-package-arg": "^11.0.0",
+        "ora": "^3.4.0",
+        "picomatch": "^3.0.1",
+        "pretty-bytes": "^5.6.0",
+        "pretty-format": "^29.7.0",
+        "progress": "^2.0.3",
+        "prompts": "^2.3.2",
+        "qrcode-terminal": "0.11.0",
+        "require-from-string": "^2.0.2",
+        "requireg": "^0.2.2",
+        "resolve": "^1.22.2",
+        "resolve-from": "^5.0.0",
+        "resolve.exports": "^2.0.3",
+        "semver": "^7.6.0",
+        "send": "^0.19.0",
+        "slugify": "^1.3.4",
+        "source-map-support": "~0.5.21",
+        "stacktrace-parser": "^0.1.10",
+        "structured-headers": "^0.4.1",
+        "tar": "^7.5.2",
+        "terminal-link": "^2.1.1",
+        "undici": "^6.18.2",
+        "wrap-ansi": "^7.0.0",
+        "ws": "^8.12.1"
+      },
+      "bin": {
+        "expo-internal": "build/bin/cli"
+      },
+      "peerDependencies": {
+        "expo": "*",
+        "expo-router": "*",
+        "react-native": "*"
+      },
+      "peerDependenciesMeta": {
+        "expo-router": {
+          "optional": true
+        },
+        "react-native": {
+          "optional": true
+        }
+      }
     },
     "node_modules/@expo/code-signing-certificates": {
       "version": "0.0.6",
@@ -4418,9 +4505,9 @@
       "license": "MIT"
     },
     "node_modules/baseline-browser-mapping": {
-      "version": "2.10.16",
-      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.16.tgz",
-      "integrity": "sha512-Lyf3aK28zpsD1yQMiiHD4RvVb6UdMoo8xzG2XzFIfR9luPzOpcBlAsT/qfB1XWS1bxWT+UtE4WmQgsp297FYOA==",
+      "version": "2.10.15",
+      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.15.tgz",
+      "integrity": "sha512-1nfKCq9wuAZFTkA2ey/3OXXx7GzFjLdkTiFVNwlJ9WqdI706CZRIhEqjuwanjMIja+84jDLa9rcyZDPDiVkASQ==",
       "license": "Apache-2.0",
       "bin": {
         "baseline-browser-mapping": "dist/cli.cjs"
@@ -4603,9 +4690,9 @@
       }
     },
     "node_modules/caniuse-lite": {
-      "version": "1.0.30001786",
-      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001786.tgz",
-      "integrity": "sha512-4oxTZEvqmLLrERwxO76yfKM7acZo310U+v4kqexI2TL1DkkUEMT8UijrxxcnVdxR3qkVf5awGRX+4Z6aPHVKrA==",
+      "version": "1.0.30001785",
+      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001785.tgz",
+      "integrity": "sha512-blhOL/WNR+Km1RI/LCVAvA73xplXA7ZbjzI4YkMK9pa6T/P3F2GxjNpEkyw5repTw9IvkyrjyHpwjnhZ5FOvYQ==",
       "funding": [
         {
           "type": "opencollective",
@@ -5470,93 +5557,6 @@
       "peerDependencies": {
         "react": "*",
         "react-native": "*"
-      }
-    },
-    "node_modules/expo/node_modules/@expo/cli": {
-      "version": "54.0.23",
-      "resolved": "https://registry.npmjs.org/@expo/cli/-/cli-54.0.23.tgz",
-      "integrity": "sha512-km0h72SFfQCmVycH/JtPFTVy69w6Lx1cHNDmfLfQqgKFYeeHTjx7LVDP4POHCtNxFP2UeRazrygJhlh4zz498g==",
-      "license": "MIT",
-      "dependencies": {
-        "@0no-co/graphql.web": "^1.0.8",
-        "@expo/code-signing-certificates": "^0.0.6",
-        "@expo/config": "~12.0.13",
-        "@expo/config-plugins": "~54.0.4",
-        "@expo/devcert": "^1.2.1",
-        "@expo/env": "~2.0.8",
-        "@expo/image-utils": "^0.8.8",
-        "@expo/json-file": "^10.0.8",
-        "@expo/metro": "~54.2.0",
-        "@expo/metro-config": "~54.0.14",
-        "@expo/osascript": "^2.3.8",
-        "@expo/package-manager": "^1.9.10",
-        "@expo/plist": "^0.4.8",
-        "@expo/prebuild-config": "^54.0.8",
-        "@expo/schema-utils": "^0.1.8",
-        "@expo/spawn-async": "^1.7.2",
-        "@expo/ws-tunnel": "^1.0.1",
-        "@expo/xcpretty": "^4.3.0",
-        "@react-native/dev-middleware": "0.81.5",
-        "@urql/core": "^5.0.6",
-        "@urql/exchange-retry": "^1.3.0",
-        "accepts": "^1.3.8",
-        "arg": "^5.0.2",
-        "better-opn": "~3.0.2",
-        "bplist-creator": "0.1.0",
-        "bplist-parser": "^0.3.1",
-        "chalk": "^4.0.0",
-        "ci-info": "^3.3.0",
-        "compression": "^1.7.4",
-        "connect": "^3.7.0",
-        "debug": "^4.3.4",
-        "env-editor": "^0.4.1",
-        "expo-server": "^1.0.5",
-        "freeport-async": "^2.0.0",
-        "getenv": "^2.0.0",
-        "glob": "^13.0.0",
-        "lan-network": "^0.1.6",
-        "minimatch": "^9.0.0",
-        "node-forge": "^1.3.3",
-        "npm-package-arg": "^11.0.0",
-        "ora": "^3.4.0",
-        "picomatch": "^3.0.1",
-        "pretty-bytes": "^5.6.0",
-        "pretty-format": "^29.7.0",
-        "progress": "^2.0.3",
-        "prompts": "^2.3.2",
-        "qrcode-terminal": "0.11.0",
-        "require-from-string": "^2.0.2",
-        "requireg": "^0.2.2",
-        "resolve": "^1.22.2",
-        "resolve-from": "^5.0.0",
-        "resolve.exports": "^2.0.3",
-        "semver": "^7.6.0",
-        "send": "^0.19.0",
-        "slugify": "^1.3.4",
-        "source-map-support": "~0.5.21",
-        "stacktrace-parser": "^0.1.10",
-        "structured-headers": "^0.4.1",
-        "tar": "^7.5.2",
-        "terminal-link": "^2.1.1",
-        "undici": "^6.18.2",
-        "wrap-ansi": "^7.0.0",
-        "ws": "^8.12.1"
-      },
-      "bin": {
-        "expo-internal": "build/bin/cli"
-      },
-      "peerDependencies": {
-        "expo": "*",
-        "expo-router": "*",
-        "react-native": "*"
-      },
-      "peerDependenciesMeta": {
-        "expo-router": {
-          "optional": true
-        },
-        "react-native": {
-          "optional": true
-        }
       }
     },
     "node_modules/exponential-backoff": {
@@ -7853,9 +7853,9 @@
       }
     },
     "node_modules/path-scurry/node_modules/lru-cache": {
-      "version": "11.3.2",
-      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.3.2.tgz",
-      "integrity": "sha512-wgWa6FWQ3QRRJbIjbsldRJZxdxYngT/dO0I5Ynmlnin8qy7tC6xYzbcJjtN4wHLXtkbVwHzk0C+OejVw1XM+DQ==",
+      "version": "11.3.0",
+      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.3.0.tgz",
+      "integrity": "sha512-sr8xPKE25m6vJVcrdn6NxtC0fVfuPowbscLypegRgOm0yXSqr5JNHCAY3hnusdJ7HRBW04j6Ip4khvHU778DuQ==",
       "license": "BlueOak-1.0.0",
       "engines": {
         "node": "20 || >=22"

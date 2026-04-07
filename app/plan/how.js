@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar } from '../../components/UI';
-import { getPlacesByVibe } from '../../services/placesService';
+import { getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel } from '../../services/placesService';
 
 const VIBES = ['Adventure', 'Chill', 'Romantic', 'Fun'];
 const CARD_HEIGHT = 200;
@@ -202,7 +202,7 @@ export default function HowScreen() {
     try {
       const city = plan.city || 'Los Angeles, CA';
       const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-        'address=' + encodeURIComponent(city) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+        'address=' + encodeURIComponent(city) + '&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
       const geoRes  = await fetch(geoUrl);
       const geoData = await geoRes.json();
 
@@ -229,23 +229,31 @@ export default function HowScreen() {
         }
 
         function mapPlace(p, typeOverride) {
-          const TYPE_MAP = {
-            cafe: 'Cafe', restaurant: 'Restaurant', bar: 'Bar', park: 'Park',
-            night_club: 'Night Club', museum: 'Museum', art_gallery: 'Art Gallery',
-            bowling_alley: 'Bowling Alley', tourist_attraction: 'Attraction',
-            gym: 'Gym', bakery: 'Bakery', spa: 'Spa',
-          };
-          const category = typeOverride || p.types?.map(t => TYPE_MAP[t]).find(Boolean) || 'Place';
+          const category = typeOverride || getReadableType(p.types || []);
+          const dist = calcDist({ lat, lng }, p.location);
+          const shortLoc = p.shortLocation || shortenVicinity(p.address) || '';
           return {
-            id: p.id, name: p.name, category, type: category,
-            desc: p.address || 'Near your location',
-            address: p.address || 'Near your location',
-            rating: p.rating != null ? Number(p.rating) : null,
-            totalRatings: p.totalRatings || 0,
-            isOpenNow: p.isOpenNow ?? null,
-            distance: calcDist({ lat, lng }, p.location),
-            location: p.location || null,
-            photoUrl: p.photoUrl ?? null,
+            id:            p.id,
+            place_id:      p.id,
+            name:          p.name,
+            category,
+            type:          category,
+            shortLocation: shortLoc,
+            desc:          shortLoc || p.address || 'Near your location',
+            address:       p.address || '',
+            rating:        p.rating != null ? Number(p.rating) : null,
+            totalRatings:  p.totalRatings || 0,
+            isOpenNow:     p.isOpenNow ?? null,
+            distance:      dist,
+            distanceMiles: dist,
+            location:      p.location || null,
+            photoUrl:      p.photoUrl ?? null,
+            featured:      (p.rating ?? 0) >= 4.5,
+            popular:       (p.totalRatings ?? 0) > 500,
+            tag:           (p.rating ?? 0) >= 4.8 ? 'Top rated'
+                         : (p.totalRatings ?? 0) > 1000 ? 'Popular'
+                         : p.isOpenNow ? 'Open now' : 'Nearby',
+            curationLabel: getCurationLabel({ ...p, distance: dist }, vibe.toLowerCase()),
           };
         }
 
@@ -264,7 +272,7 @@ export default function HowScreen() {
         const o = addonOverride[addonType];
         const addonUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
           'location=' + lat + ',' + lng + '&radius=8000&type=' + o.type +
-          '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyCzjURXBC65HTlaZnYyGbCF6JJ1eMYQcq8';
+          '&keyword=' + encodeURIComponent(o.keyword) + '&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
         const addonRes    = await fetch(addonUrl);
         const addonData   = await addonRes.json();
         const addonResults = addonData.results ?? [];
