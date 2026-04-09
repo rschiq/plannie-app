@@ -1,6 +1,6 @@
 // app/plan/activity.js
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
@@ -15,8 +15,8 @@ const VIBE_MAP = {
 };
 
 const VIBE_RADIUS = {
-  chill: 2000, fun: 2000, romantic: 2000,
-  adventure: 15000, foodie: 2000,
+  chill: 5000, fun: 5000, romantic: 5000,
+  adventure: 20000, foodie: 5000,
 };
 
 function getTag(p) {
@@ -52,6 +52,9 @@ export default function ActivityScreen() {
 
   async function loadPlaces() {
     setLoading(true);
+
+    // Show what plan has — remove after debugging
+    // location loaded from plan.coords or geocoded from plan.city
 
     try {
       const vibe         = VIBE_MAP[plan.vibe] || 'chill';
@@ -91,12 +94,12 @@ export default function ActivityScreen() {
 
       if (places.length < 4 && vibe !== 'adventure') {
         places = await getPlacesByVibe(vibe, { lat, lng }, {
-          radius: 5000, maxResults: 12, selectedArea,
+          radius: 20000, maxResults: 12, selectedArea,
         });
       }
       if (places.length < 3) {
         places = await getPlacesByVibe(vibe, { lat, lng }, {
-          radius: 10000, maxResults: 12, selectedArea,
+          radius: 20000, maxResults: 12, selectedArea,
         });
       }
 

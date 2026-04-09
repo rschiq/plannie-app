@@ -4,7 +4,7 @@ import {
   Alert, Linking, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow, VIBE_COLORS } from '../../constants/theme';
@@ -304,6 +304,7 @@ function SectionHeader({ label, count, sub }) {
 // ─────────────────────────────────────────────────────────────
 export default function SavedScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { savedPlans, deletePlan, toggleFavorite, updatePlanMeta } = usePlan();
 
   const [noteTarget,   setNoteTarget]   = useState(null);
@@ -338,7 +339,7 @@ export default function SavedScreen() {
         <Text style={styles.subtitle}>Every date, beautifully remembered.</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
 
         {isEmpty ? (
           <View style={styles.empty}>

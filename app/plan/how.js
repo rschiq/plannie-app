@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
@@ -176,6 +176,7 @@ function SurpriseLoader({ visible }) {
 
 export default function HowScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { plan, updatePlan, generatePlan } = usePlan();
   const [showLoader, setShowLoader] = useState(false);
   const params = useLocalSearchParams();
@@ -351,7 +352,7 @@ export default function HowScreen() {
       </ScrollView>
 
       {/* Bottom Tab Bar */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.replace('/(tabs)')} activeOpacity={0.7}>
           <Text style={styles.tabIcon}>🏠</Text>
           <Text style={styles.tabLabel}>Home</Text>

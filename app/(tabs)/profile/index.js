@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Share } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -32,7 +32,8 @@ function ProfileRow({ icon, title, sub, badge, onPress, isPremium }) {
 export default function ProfileScreen() {
   const { savedPlans, plan } = usePlan();
   const { setIsPremium } = usePremium();
-  const router_ = useRouter();                // ✅ useRouter for post-async navigation
+  const router_ = useRouter();
+  const insets = useSafeAreaInsets();                // ✅ useRouter for post-async navigation
   const [isPremium, setIsPremiumLocal] = useState(false);
   const [isLoggedIn, setIsLoggedIn]   = useState(false);
   const [userEmail, setUserEmail]     = useState('');
@@ -63,7 +64,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 40) }}>
 
         {/* ── Hero — Midnight Velvet ── */}
         {/* ✅ Deep purple gradient — NOT warm brown ['#2C2520', '#4A3830'] */}

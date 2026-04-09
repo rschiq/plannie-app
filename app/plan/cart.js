@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Alert, Linking, Share, ActivityIndicator, Switch, TextInput, KeyboardAvoidingView, Platform, Image, Pressable, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ACTIVITIES, RESTAURANTS, ADDONS } from '../../data';
-import { getPlacesByVibe } from '../../services/placesService';
+import { getPlacesByVibe, getPlacesNearby, getCurationLabel } from '../../services/placesService';
 
 // ─── Item Action Sheet ───────────────────────────────────────
 function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
@@ -171,7 +172,7 @@ function calcDistMiles(from, to) {
 
 // ─── Place Detail Sheet ───────────────────────────────────────
 // Shows full details of a swap candidate before confirming
-function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose }) {
+function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose, onSwap, onRemove }) {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -317,21 +318,40 @@ function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose }) {
 
                 <View style={detail.divider} />
 
-                {/* Action buttons */}
-                <TouchableOpacity style={detail.primaryBtn} onPress={onConfirm} activeOpacity={0.88}>
-                  <Text style={detail.primaryBtnText}>
-                    ✓ Select this {swapKey === 'food' ? 'restaurant' : 'activity'}
-                  </Text>
-                </TouchableOpacity>
-
-                <View style={detail.secondaryRow}>
-                  <TouchableOpacity style={detail.secondaryBtn} onPress={openInMaps} activeOpacity={0.8}>
-                    <Text style={detail.secondaryBtnText}>🗺️ Open in Maps</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={detail.secondaryBtn} onPress={onClose} activeOpacity={0.8}>
-                    <Text style={detail.secondaryBtnText}>✕ Cancel</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Action buttons — context aware */}
+                {onSwap ? (
+                  // ── Opened from card tap — show Open in Maps + Swap + Remove ──
+                  <>
+                    <TouchableOpacity style={detail.primaryBtn} onPress={openInMaps} activeOpacity={0.88}>
+                      <Text style={detail.primaryBtnText}>🗺️ Open in Maps</Text>
+                    </TouchableOpacity>
+                    <View style={detail.secondaryRow}>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={onSwap} activeOpacity={0.8}>
+                        <Text style={detail.secondaryBtnText}>🔄 Swap</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={onRemove} activeOpacity={0.8}>
+                        <Text style={[detail.secondaryBtnText, { color: '#E57373' }]}>🗑️ Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  // ── Opened from swap list — show Select + Open in Maps + Cancel ──
+                  <>
+                    <TouchableOpacity style={detail.primaryBtn} onPress={onConfirm} activeOpacity={0.88}>
+                      <Text style={detail.primaryBtnText}>
+                        ✓ Select this {swapKey === 'food' ? 'restaurant' : 'activity'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={detail.secondaryRow}>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={openInMaps} activeOpacity={0.8}>
+                        <Text style={detail.secondaryBtnText}>🗺️ Open in Maps</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={detail.secondaryBtn} onPress={onClose} activeOpacity={0.8}>
+                        <Text style={detail.secondaryBtnText}>✕ Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </>
             )}
 
@@ -369,94 +389,174 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
   async function fetchSwapItems() {
     setLoading(true);
     try {
-      const city = plan.city || 'Los Angeles';
-      const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-        'address=' + encodeURIComponent(city) + '&key=' + GOOGLE_API_KEY;
-      const geoRes  = await fetch(geoUrl);
-      const geoData = await geoRes.json();
-
-      if (geoData.status === 'OK') {
-        const { lat, lng } = geoData.results[0].geometry.location;
-
-        if (swapKey === 'addon') {
-          const types = ['flowers', 'dessert'].filter((t) => t !== plan.addonType);
-          const addonOverride = {
-            flowers: { type: 'florist', keyword: 'flower shop' },
-            dessert: { type: 'bakery',  keyword: 'dessert sweets' },
-          };
-          const results = await Promise.all(types.map(async (t) => {
-            const o = addonOverride[t];
-            const url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
-              'location=' + lat + ',' + lng + '&radius=20000&type=' + o.type +
-              '&keyword=' + encodeURIComponent(o.keyword) + '&key=' + GOOGLE_API_KEY;
-            const res  = await fetch(url);
-            const data = await res.json();
-            const p    = data.results?.[0];
-            if (!p) return null;
-            const placeLocation = p.geometry?.location
-              ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng } : null;
-            return {
-              id: p.place_id, name: p.name,
-              category: t === 'flowers' ? 'Flower Shop' : 'Dessert Stop',
-              rating: p.rating ? parseFloat(p.rating).toFixed(1) : null,
-              totalRatings: p.user_ratings_total || 0,
-              vicinity: p.vicinity || '', location: placeLocation,
-              dist: calcDistMiles({ lat, lng }, placeLocation),
-              photoUrl: p.photos?.[0]?.photo_reference
-                ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=120&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
-                : null,
-              _addonType: t,
-            };
-          }));
-          setItems(results.filter(Boolean));
-          setLoading(false);
-          return;
-        }
-
-        const vibe      = VIBE_MAP[plan.vibe] || 'romantic';
-        const fetchVibe = swapKey === 'food' ? 'foodie' : vibe;
-        const searchRadius = fetchVibe === 'adventure' ? 20000 : 8000;
-        const places    = await getPlacesByVibe(fetchVibe, { lat, lng }, { radius: searchRadius, maxResults: 15 });
-
-        // ✅ Exclude current item by both id AND name — covers Plan For Me edge cases
-        const currentItem = swapKey === 'food' ? plan.food : plan.activity;
-        const filtered = places
-          .filter((p) => {
-            if (currentItem?.id   && p.id   === currentItem.id)   return false;
-            if (currentItem?.name && p.name === currentItem.name) return false;
-            if (p.id === plan.activity?.id || p.id === plan.food?.id) return false;
-            return true;
-          })
-          .filter((p) => (p.rating || 0) >= 4.0 && (p.totalRatings || 0) >= 30)
-          .sort((a, b) => {
-            const scoreA = (a.rating || 0) * Math.log(Math.max(a.totalRatings || 1, 1));
-            const scoreB = (b.rating || 0) * Math.log(Math.max(b.totalRatings || 1, 1));
-            return scoreB - scoreA;
-          }).slice(0, 10);
-
-        const finalList = filtered.length > 0
-          ? filtered
-          : places
-              .filter((p) => {
-                if (currentItem?.id   && p.id   === currentItem.id)   return false;
-                if (currentItem?.name && p.name === currentItem.name) return false;
-                return true;
-              })
-              .slice(0, 5);
-
-        setItems(finalList.map((p) => ({
-          id: p.id, name: p.name,
-          category: getReadableType(p.types || []),
-          rating: p.rating ? parseFloat(p.rating).toFixed(1) : null,
-          totalRatings: p.totalRatings || 0,
-          isOpenNow: p.isOpenNow ?? null,
-          vicinity: shortenVicinity(p.address),
-          fullVicinity: p.address || '',
-          location: p.location || null,
-          dist: calcDistMiles({ lat, lng }, p.location),
-          photoUrl: p.photoUrl || null,
-        })));
+      // ✅ Use stored coords first — more accurate than geocoding city string
+      let lat, lng;
+      if (plan.coords?.lat && plan.coords?.lng) {
+        lat = plan.coords.lat;
+        lng = plan.coords.lng;
+      } else {
+        const city    = plan.city || 'Los Angeles';
+        const geoUrl  = 'https://maps.googleapis.com/maps/api/geocode/json?' +
+          'address=' + encodeURIComponent(city) + '&key=' + GOOGLE_API_KEY;
+        const geoRes  = await fetch(geoUrl);
+        const geoData = await geoRes.json();
+        if (geoData.status !== 'OK') throw new Error('Geocode failed: ' + geoData.status);
+        lat = geoData.results[0].geometry.location.lat;
+        lng = geoData.results[0].geometry.location.lng;
       }
+
+      // ── ADDON SWAP ────────────────────────────────────────────
+      if (swapKey === 'addon') {
+        const types = ['flowers', 'dessert'].filter((t) => t !== plan.addonType);
+        const addonSearches = {
+          flowers: [
+            { type: 'florist', keyword: 'florist flower shop' },
+          ],
+          dessert: [
+            { type: 'bakery',     keyword: 'dessert bakery cakes' },
+            { type: 'cafe',       keyword: 'dessert cafe' },
+            { type: 'ice_cream',  keyword: 'ice cream gelato' },
+          ],
+        };
+        const nonFoodKeywords = [
+          'recreation area', 'state park', 'national park', 'reservoir',
+          'lake', 'river', 'trail', 'campground', 'park', 'school',
+          'hospital', 'clinic', 'auto', 'tire', 'supply', 'storage',
+        ];
+
+        const results = await Promise.all(types.map(async (t) => {
+          const searches = addonSearches[t];
+          const seen = new Set();
+          const allResults = [];
+
+          for (const r of [10000, 20000, 40000]) {
+            for (const { type: placeType, keyword } of searches) {
+              const url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' +
+                'location=' + lat + ',' + lng + '&radius=' + r +
+                '&type=' + placeType + '&keyword=' + encodeURIComponent(keyword) +
+                '&key=' + GOOGLE_API_KEY;
+              const res  = await fetch(url);
+              const data = await res.json();
+              for (const p of data.results || []) {
+                if (!seen.has(p.place_id)) {
+                  seen.add(p.place_id);
+                  allResults.push(p);
+                }
+              }
+            }
+            if (allResults.length > 0) break; // found results — stop expanding
+          }
+
+          // Filter out non-food/non-relevant places
+          const valid = allResults.filter(p => {
+            const name = (p.name || '').toLowerCase();
+            if (nonFoodKeywords.some(kw => name.includes(kw))) return false;
+            if (t === 'dessert') {
+              const foodTypes = ['bakery', 'cafe', 'restaurant', 'food', 'ice_cream_shop', 'meal_takeaway'];
+              if (!(p.types || []).some(ft => foodTypes.includes(ft))) return false;
+            }
+            return true;
+          });
+
+          const best = valid.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0];
+          if (!best) return null;
+
+          const placeLocation = best.geometry?.location
+            ? { lat: best.geometry.location.lat, lng: best.geometry.location.lng } : null;
+          return {
+            id: best.place_id, name: best.name,
+            category: t === 'flowers' ? 'Flower Shop' : 'Dessert Stop',
+            rating: best.rating ? parseFloat(best.rating).toFixed(1) : null,
+            totalRatings: best.user_ratings_total || 0,
+            vicinity: best.vicinity || '', location: placeLocation,
+            dist: calcDistMiles({ lat, lng }, placeLocation),
+            photoUrl: best.photos?.[0]?.photo_reference
+              ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=120&photoreference=${best.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+              : null,
+            _addonType: t,
+          };
+        }));
+        setItems(results.filter(Boolean));
+        setLoading(false);
+        return;
+      }
+
+      // ── ACTIVITY / FOOD SWAP — progressive radius expansion ──
+      const currentItem  = swapKey === 'food' ? plan.food : plan.activity;
+      const vibe         = VIBE_MAP[plan.vibe] || 'romantic';
+      const fetchVibe    = swapKey === 'food' ? 'foodie' : vibe;
+      const selectedArea = (plan.city || '').split(',')[0].trim();
+
+      // Helper — exclude current item and already-planned items
+      function excludeCurrent(list) {
+        return list.filter((p) => {
+          if (currentItem?.id   && p.id   === currentItem.id)   return false;
+          if (currentItem?.name && p.name === currentItem.name) return false;
+          if (swapKey !== 'food' && (p.id === plan.food?.id))   return false;
+          if (swapKey !== 'activity' && (p.id === plan.activity?.id)) return false;
+          return true;
+        });
+      }
+
+      // Helper — quality filter with fallback
+      function qualityFilter(list) {
+        const strict = list.filter(p => (p.rating || 0) >= 4.2 && (p.totalRatings || 0) >= 20);
+        const lenient = list.filter(p => (p.rating || 0) >= 3.8);
+        return strict.length >= 3 ? strict : lenient.length > 0 ? lenient : list;
+      }
+
+      // Map to swap item shape
+      function mapToSwapItem(p) {
+        return {
+          id:           p.id,
+          name:         p.name,
+          category:     getReadableType(p.types || []),
+          rating:       p.rating ? parseFloat(p.rating).toFixed(1) : null,
+          totalRatings: p.totalRatings || 0,
+          isOpenNow:    p.isOpenNow ?? null,
+          vicinity:     shortenVicinity(p.address),
+          fullVicinity: p.address || '',
+          location:     p.location || null,
+          dist:         calcDistMiles({ lat, lng }, p.location),
+          photoUrl:     p.photoUrl || null,
+        };
+      }
+
+      let finalList = [];
+
+      // ── PASS 1: tight radius around selected area (5km) ──
+      const pass1 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
+        radius: 5000, maxResults: 15, selectedArea,
+      });
+      finalList = qualityFilter(excludeCurrent(pass1));
+
+      // ── PASS 2: medium radius (12km) if not enough ──
+      if (finalList.length < 4) {
+        const pass2 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
+          radius: 12000, maxResults: 15, selectedArea,
+        });
+        finalList = qualityFilter(excludeCurrent(pass2));
+      }
+
+      // ── PASS 3: wide radius (25km) — nearby cities ──
+      if (finalList.length < 3) {
+        const pass3 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
+          radius: 25000, maxResults: 15, selectedArea: '',
+        });
+        finalList = qualityFilter(excludeCurrent(pass3));
+      }
+
+      // ── PASS 4: very wide (50km) — last resort ──
+      if (finalList.length < 2) {
+        const pass4 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
+          radius: 50000, maxResults: 15, selectedArea: '',
+        });
+        // At this point drop quality filter — just exclude current
+        finalList = excludeCurrent(pass4);
+      }
+
+      setItems(finalList.slice(0, 10).map(mapToSwapItem));
+
     } catch (e) {
       console.log('[SwapSheet] error:', e.message);
       setItems([]);
@@ -707,7 +807,7 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
 
 // ─── Summary Card ─────────────────────────────────────────────
 // Rich plan item card: photo thumb, rating, distance, tags, why, View Details
-function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, onViewDetails,
+function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, onViewDetails, onRemove, onSwap,
   rating, distance, isOpenNow, shortLocation, curationLabel, photoUrl }) {
 
   // Build category tags from label + sub
@@ -769,13 +869,13 @@ function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, onViewDeta
           <Text style={styles.tiWhy}>{curationLabel}</Text>
         ) : null}
 
-        {/* Actions row */}
+        {/* Actions row — Swap + Remove only (tap card to view details) */}
         <View style={styles.tiActions}>
-          <TouchableOpacity style={styles.tiActionBtn} onPress={onViewDetails} activeOpacity={0.8}>
-            <Text style={styles.tiActionBtnText}>View Details</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tiActionBtnOutline} onPress={onTap} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.tiActionBtnOutline} onPress={onSwap} activeOpacity={0.8}>
             <Text style={styles.tiActionBtnOutlineText}>🔄 Swap</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tiActionBtnRemove} onPress={onRemove} activeOpacity={0.8}>
+            <Text style={styles.tiActionBtnRemoveText}>🗑️</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -786,6 +886,7 @@ function TimelineItem({ emoji, time, label, name, sub, isLast, onTap, onViewDeta
 // ─── Main Screen ──────────────────────────────────────────────
 export default function CartScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { plan, updatePlan, savePlan, savedPlans, fmtHM, getBaseHour, getBaseMin } = usePlan();
 
   const [swapKey, setSwapKey]               = useState(null);
@@ -795,6 +896,7 @@ export default function CartScreen() {
   const [isSpecial, setIsSpecial]           = useState(false);
   const [specialTitle, setSpecialTitle]     = useState('');
   const [showSpecialInput, setShowSpecialInput] = useState(false);
+  const [locationSyncing, setLocationSyncing] = useState(false);
 
   // ✅ Moved after state declarations to fix reference-before-declaration bug
   useEffect(() => {
@@ -862,13 +964,109 @@ export default function CartScreen() {
     else if (key === 'food') updatePlan({ food: null });
     else updatePlan({ addonType: null, addonItem: null });
     setActiveItem(null);
+    setDetailItem(null);
   }
 
-  function handleSwap(key, item) {
+  async function handleSwap(key, item) {
+    // Apply the swap immediately so UI updates right away
     if (key === 'activity') updatePlan({ activity: item });
     else if (key === 'food') updatePlan({ food: item });
     else updatePlan({ addonType: item._addonType, addonItem: item });
     setSwapKey(null);
+
+    // ✅ Location sync — re-fetch the complementary item near the new location
+    // If activity swapped → find food near new activity
+    // If food swapped → find activity near new food
+    const newLocation = item?.location;
+    if (!newLocation?.lat || !newLocation?.lng) return;
+
+    const vibe = VIBE_MAP[plan.vibe] || 'romantic';
+
+    if (key === 'activity' && plan.food) {
+      // Activity moved — silently refresh food near new activity location
+      setLocationSyncing(true);
+      try {
+        const nearbyFood = await getPlacesNearby(
+          ['restaurant', 'cafe', 'bar'],
+          newLocation,
+          { radius: 3000, maxResults: 8 }
+        );
+        if (nearbyFood.length > 0) {
+          // Pick the best option that isn't the current food item
+          const best = nearbyFood.find(p =>
+            p.id !== plan.food?.id && p.name !== plan.food?.name
+          ) || nearbyFood[0];
+          if (best && best.id !== plan.food?.id) {
+            const dist = best.distanceMiles ?? 0;
+            updatePlan({
+              food: {
+                id:            best.id,
+                place_id:      best.id,
+                name:          best.name,
+                category:      getReadableType(best.types || []),
+                type:          getReadableType(best.types || []),
+                shortLocation: best.shortLocation || shortenVicinity(best.address) || '',
+                desc:          best.shortLocation || shortenVicinity(best.address) || '',
+                address:       best.address || '',
+                rating:        best.rating != null ? Number(best.rating) : null,
+                totalRatings:  best.totalRatings || 0,
+                isOpenNow:     best.isOpenNow ?? null,
+                distance:      dist,
+                location:      best.location || null,
+                photoUrl:      best.photoUrl ?? null,
+                tag:           (best.rating ?? 0) >= 4.8 ? 'Top rated' : 'Nearby',
+                featured:      (best.rating ?? 0) >= 4.5,
+                curationLabel: getCurationLabel({ ...best, distance: dist }, 'foodie'),
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.log('[LocationSync] food re-fetch failed:', e.message);
+      }
+      setLocationSyncing(false);
+
+    } else if (key === 'food' && plan.activity) {
+      // Food moved — silently refresh activity near new food location
+      setLocationSyncing(true);
+      try {
+        const nearbyActivity = await getPlacesByVibe(vibe, newLocation, {
+          radius: 3000, maxResults: 8,
+        });
+        if (nearbyActivity.length > 0) {
+          const best = nearbyActivity.find(p =>
+            p.id !== plan.activity?.id && p.name !== plan.activity?.name
+          ) || nearbyActivity[0];
+          if (best && best.id !== plan.activity?.id) {
+            const dist = best.distanceMiles ?? 0;
+            updatePlan({
+              activity: {
+                id:            best.id,
+                place_id:      best.id,
+                name:          best.name,
+                category:      getReadableType(best.types || []),
+                type:          getReadableType(best.types || []),
+                shortLocation: best.shortLocation || shortenVicinity(best.address) || '',
+                desc:          best.shortLocation || shortenVicinity(best.address) || '',
+                address:       best.address || '',
+                rating:        best.rating != null ? Number(best.rating) : null,
+                totalRatings:  best.totalRatings || 0,
+                isOpenNow:     best.isOpenNow ?? null,
+                distance:      dist,
+                location:      best.location || null,
+                photoUrl:      best.photoUrl ?? null,
+                tag:           (best.rating ?? 0) >= 4.8 ? 'Top rated' : 'Nearby',
+                featured:      (best.rating ?? 0) >= 4.5,
+                curationLabel: getCurationLabel({ ...best, distance: dist }, vibe),
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.log('[LocationSync] activity re-fetch failed:', e.message);
+      }
+      setLocationSyncing(false);
+    }
   }
 
   async function handleSave() {
@@ -962,6 +1160,14 @@ export default function CartScreen() {
           </View>
         </LinearGradient>
 
+        {/* ── Location sync indicator ── */}
+        {locationSyncing && (
+          <View style={styles.syncBanner}>
+            <ActivityIndicator size="small" color={colors.gold} />
+            <Text style={styles.syncText}>Updating nearby suggestions…</Text>
+          </View>
+        )}
+
         {/* ── Why this plan works ── */}
         {whyBullets.length > 0 && (
           <View style={styles.whySection}>
@@ -990,8 +1196,10 @@ export default function CartScreen() {
                 curationLabel={item.curationLabel}
                 photoUrl={item.photoUrl}
                 isLast={idx === timelineItems.length - 1}
-                onTap={() => setActiveItem(item)}
+                onTap={() => setDetailItem(item)}
                 onViewDetails={() => setDetailItem(item)}
+                onSwap={() => setSwapKey(item.key)}
+                onRemove={() => removeItem(item.key)}
               />
             ))}
           </View>
@@ -1005,7 +1213,7 @@ export default function CartScreen() {
       </ScrollView>
 
       {/* ── Bottom Bar ── */}
-      <View style={styles.bbar}>
+      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         {isSaved ? (
           <View style={styles.savedState}>
             <Text style={styles.savedBannerText}>🎉 Plan saved!</Text>
@@ -1058,12 +1266,14 @@ export default function CartScreen() {
         onRemove={() => removeItem(activeItem?.key)}
       />
 
-      {/* ── View Details modal (same as swap preview detail view) ── */}
+      {/* ── View Details modal — full API details with photos ── */}
       <PlaceDetailSheet
         visible={!!detailItem}
         place={detailItem}
         swapKey={detailItem?.key}
         onConfirm={() => setDetailItem(null)}
+        onSwap={() => { setSwapKey(detailItem?.key); setDetailItem(null); }}
+        onRemove={() => { removeItem(detailItem?.key); setDetailItem(null); }}
         onClose={() => setDetailItem(null)}
       />
 
@@ -1128,16 +1338,22 @@ const styles = StyleSheet.create({
   tiWhy: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, paddingHorizontal: 14, marginBottom: 12, lineHeight: 18, fontStyle: 'italic' },
 
   // Action buttons inside card
-  tiActions: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: colors.gray4, paddingTop: 12 },
-  tiActionBtn: { flex: 1, backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  tiActions: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: colors.gray4, paddingTop: 12, alignItems: 'center' },
+  tiActionBtn: { flex: 1, backgroundColor: colors.rose, borderRadius: 999, height: 40, alignItems: 'center', justifyContent: 'center' },
   tiActionBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#F2EDE8' },
-  tiActionBtnOutline: { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.gray4 },
+  tiActionBtnOutline: { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.gray4 },
   tiActionBtnOutlineText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
+  // ✅ Remove button — compact X, destructive but subtle
+  tiActionBtnRemoveText: { fontSize: 16 },
+  tiActionBtnRemove: { width: 38, height: 38, borderRadius: 999, backgroundColor: 'rgba(255,100,100,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,100,100,0.20)' },
 
   // ── Why this plan works ─────────────────────────────────────
   whySection: { marginHorizontal: 24, marginTop: 20, marginBottom: 4, backgroundColor: 'rgba(201,169,110,0.08)', borderRadius: radius.md, padding: 18, borderWidth: 1, borderColor: 'rgba(201,169,110,0.18)' },
   whyTitle:   { fontFamily: fonts.bodySemiBold, fontSize: 13, color: colors.gold, marginBottom: 10, letterSpacing: 0.3 },
   whyBullet:  { fontFamily: fonts.body, fontSize: 13, color: colors.gray, lineHeight: 22, marginBottom: 2 },
+  // ── Location sync banner ────────────────────────────────────
+  syncBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 24, marginTop: 12, backgroundColor: 'rgba(201,169,110,0.08)', borderRadius: radius.sm, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: 'rgba(201,169,110,0.15)' },
+  syncText:   { fontFamily: fonts.body, fontSize: 12, color: colors.gold },
 
   // ── Empty ───────────────────────────────────────────────────
   empty:      { padding: 44, alignItems: 'center' },
@@ -1256,9 +1472,9 @@ const detail = StyleSheet.create({
   rowText:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 20 },
   rowLink:     { color: colors.rose },
   divider:     { height: 1, backgroundColor: colors.gray4, marginVertical: 18 },
-  primaryBtn:  { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
-  primaryBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: '#F2EDE8', letterSpacing: 0.2 },
-  secondaryRow:   { flexDirection: 'row', gap: 8 },
-  secondaryBtn:   { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, paddingVertical: 13, alignItems: 'center' },
-  secondaryBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
+  primaryBtn:       { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
+  primaryBtnText:   { fontFamily: fonts.bodySemiBold, fontSize: 15, color: '#F2EDE8', letterSpacing: 0.2 },
+  secondaryRow:     { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  secondaryBtn:     { flex: 1, backgroundColor: colors.cream3, borderRadius: 999, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
+  secondaryBtnText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal, textAlign: 'center' },
 });

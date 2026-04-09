@@ -18,10 +18,44 @@ const ADDON_OPTIONS = [
 ];
 
 // Specific search config per addon type
+// Using multiple targeted keywords and strict type matching
 const ADDON_SEARCH_CONFIG = {
-  flowers: { type: 'florist', keyword: 'flower shop bouquet' },
-  dessert: { type: 'bakery',  keyword: 'dessert cake ice cream sweets' },
+  flowers: {
+    searches: [
+      { type: 'florist',  keyword: 'florist flower shop' },
+      { type: 'florist',  keyword: 'flower bouquet delivery' },
+    ],
+  },
+  dessert: {
+    searches: [
+      { type: 'bakery',      keyword: 'dessert bakery cakes' },
+      { type: 'cafe',        keyword: 'dessert cafe ice cream' },
+      { type: 'ice_cream',   keyword: 'ice cream gelato' },
+      { type: 'restaurant',  keyword: 'dessert bar sweets' },
+    ],
+  },
 };
+
+// Keywords that signal a non-food place slipping through
+const NON_FOOD_KEYWORDS = [
+  'recreation area', 'state park', 'national park', 'reservoir',
+  'lake', 'river', 'creek', 'trail', 'campground', 'park',
+  'school', 'hospital', 'clinic', 'pharmacy', 'gas station',
+  'auto', 'tire', 'supply', 'warehouse', 'storage',
+];
+
+function isValidAddonResult(p, type) {
+  const name = (p.name || '').toLowerCase();
+  // Block non-food places
+  if (NON_FOOD_KEYWORDS.some(kw => name.includes(kw))) return false;
+  // For dessert — must have at least one food-related type
+  if (type === 'dessert') {
+    const foodTypes = ['bakery', 'cafe', 'restaurant', 'food', 'ice_cream_shop', 'meal_takeaway', 'meal_delivery'];
+    const hasFood = (p.types || []).some(t => foodTypes.includes(t));
+    if (!hasFood) return false;
+  }
+  return true;
+}
 
 function calcDistMiles(from, to) {
   const R = 3958.8;
@@ -67,27 +101,43 @@ export default function AddonsScreen() {
       const { lat, lng } = geoData.results[0].geometry.location;
       const config = ADDON_SEARCH_CONFIG[type];
 
-      // Step 2 — search nearby with a wide radius (20km covers suburbs like Hemet)
-      const params = new URLSearchParams({
-        location: `${lat},${lng}`,
-        radius: '20000',        // ✅ was 8000 — too tight for suburban areas
-        type: config.type,
-        keyword: config.keyword,
-        key: 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w',
-      });
-
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`
+      // Step 2 — run multiple targeted searches in parallel
+      const searchResults = await Promise.allSettled(
+        config.searches.map(({ type: placeType, keyword }) => {
+          const params = new URLSearchParams({
+            location: `${lat},${lng}`,
+            radius:   '20000',
+            type:     placeType,
+            keyword:  keyword,
+            key:      'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w',
+          });
+          return fetch(
+            `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`
+          ).then(r => r.json());
+        })
       );
-      const data = await res.json();
-      console.log(`[Addons] ${type} → ${data.status}, ${data.results?.length ?? 0} results`);
 
-      const results = data.results ?? [];
+      // Merge results, deduplicate by place_id
+      const seen = new Set();
+      const results = [];
+      for (const r of searchResults) {
+        if (r.status !== 'fulfilled') continue;
+        for (const p of r.value.results || []) {
+          if (!seen.has(p.place_id)) {
+            seen.add(p.place_id);
+            results.push(p);
+          }
+        }
+      }
 
-      // Step 3 — filter: rating >= 3.5 and at least 10 reviews
-      // (lower bar than activities — flower shops & dessert spots have fewer reviews)
+      console.log(`[Addons] ${type} → ${results.length} merged results`);
+
+      // Step 3 — filter: must be valid food place, rating >= 3.5, at least 10 reviews
       const filtered = results.filter(
-        (p) => (p.rating ?? 0) >= 3.5 && (p.user_ratings_total ?? 0) >= 10
+        (p) =>
+          isValidAddonResult(p, type) &&
+          (p.rating ?? 0) >= 3.5 &&
+          (p.user_ratings_total ?? 0) >= 10
       );
 
       // Step 4 — sort by rating desc, take top 4

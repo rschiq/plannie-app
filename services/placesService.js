@@ -81,17 +81,27 @@ export const VIBE_CONFIG = {
   chill: {
     emoji: '☕',
     label: 'Chill',
-    // Slow, cozy, easy — cafes, parks, cinemas, bookstores
-    types: ['cafe', 'movie_theater', 'park', 'spa', 'shopping_mall'],
-    keywords: ['coffee shop', 'cozy cafe', 'bookstore', 'park walk', 'tea house', 'cinema'],
+    // Relaxed but premium — avoid generic cafes, prefer experiences
+    types: ['movie_theater', 'spa', 'shopping_mall', 'art_gallery', 'museum'],
+    keywords: [
+      'wine bar', 'speakeasy bar', 'rooftop lounge', 'jazz lounge',
+      'comedy club', 'bookstore cafe', 'board game cafe', 'dessert bar',
+      'craft brewery', 'tea house', 'cigar lounge',
+    ],
     color: '#A8DADC',
+    minRating: 4.2,      // ✅ higher floor for chill — no cheap spots
+    minReviews: 50,
   },
   fun: {
     emoji: '🎉',
     label: 'Fun',
-    // Playful, loud, joyful — arcades, bowling, karaoke
-    types: ['bowling_alley', 'amusement_park', 'night_club'],
-    keywords: ['arcade games', 'karaoke bar', 'bowling alley', 'billiards pool', 'mini golf', 'comedy club', 'dance club'],
+    // Playful, loud, joyful — bowling, arcades, karaoke
+    types: ['bowling_alley', 'amusement_center', 'night_club', 'bar'],
+    keywords: [
+      'bowling alley', 'bowling bar', 'arcade bar', 'karaoke bar',
+      'billiards pool hall', 'mini golf', 'comedy club', 'dave buster',
+      'bowlero', 'lucky strike', 'punch bowl social', 'main event',
+    ],
     color: '#FFB347',
   },
   romantic: {
@@ -244,25 +254,38 @@ function calcDistMiles(from, to) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PART 1 — Smart scoring formula
-// score = (rating*2) + (reviews/1000) - (distance*1.5)
+// ISSUE 4 — Improved smart scoring
+// Quality signals weighted higher than distance
+// Better places slightly farther should beat mediocre ones nearby
 // ─────────────────────────────────────────────────────────────
 function scorePlace(p, selectedArea = '') {
   const rating   = p.rating       || 0;
   const reviews  = p.totalRatings || 0;
   const distance = p.distanceMiles || 0;
 
-  let score = (rating * 2) + (reviews / 1000) - (distance * 1.5);
+  // Quality-first scoring:
+  // rating*3 + log(reviews) - distance*0.8
+  // Distance penalty is mild — a great place 4 miles away beats
+  // a mediocre one 0.5 miles away
+  const logReviews = reviews > 0 ? Math.log10(reviews) * 2 : 0;
+  let score = (rating * 3) + logReviews - (distance * 0.8);
 
-  // PART 2 — Local area boost: +3 if address mentions selected area
+  // Local area boost: +2 if address mentions selected area
   if (selectedArea) {
     const addr = (p.address || '').toLowerCase();
     const area = selectedArea.toLowerCase();
-    if (addr.includes(area)) score += 3;
+    if (addr.includes(area)) score += 2;
   }
 
-  // PART 2 — Distance penalty: -3 if more than 3 miles away
-  if (distance > 3) score -= 3;
+  // Distance penalty: -2 if more than 5 miles (less strict than before)
+  if (distance > 5) score -= 2;
+  // Hard penalty for very far places (>10 miles)
+  if (distance > 10) score -= 4;
+
+  // Boost for highly reviewed places (social proof)
+  if (reviews > 500)  score += 0.5;
+  if (reviews > 2000) score += 1.0;
+  if (rating >= 4.7)  score += 1.0;
 
   return score;
 }
@@ -306,18 +329,131 @@ function enforceVariety(places, maxResults = 12) {
 // ─────────────────────────────────────────────────────────────
 // Internal: filter + sort + variety pipeline
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// ISSUE 3 — Retail/store exclusion
+// These place types and name keywords should never appear
+// as date activities unless the vibe explicitly allows shopping
+// ─────────────────────────────────────────────────────────────
+const RETAIL_TYPES = new Set([
+  'store', 'clothing_store', 'shoe_store', 'home_goods_store',
+  'furniture_store', 'hardware_store', 'electronics_store',
+  'bicycle_store', 'book_store', 'pet_store', 'supermarket',
+  'grocery_or_supermarket', 'convenience_store', 'department_store',
+  'jewelry_store', 'liquor_store', 'pharmacy', 'car_dealer',
+  'car_rental', 'car_repair', 'car_wash', 'locksmith', 'moving_company',
+  'painter', 'plumber', 'roofing_contractor', 'storage',
+]);
+
+const RETAIL_NAME_KEYWORDS = [
+  'store', ' shop', 'supply', 'supplies', 'outlet', 'warehouse',
+  'dealer', 'equipment', 'retail', 'pro shop', 'sporting goods',
+  'gun shop', 'paintball supply', 'gear',
+];
+
+// ─────────────────────────────────────────────────────────────
+// Names that signal a cheap/generic place not worth a date
+// ─────────────────────────────────────────────────────────────
+const CHEAP_NAME_KEYWORDS = [
+  'boba', 'bubble tea', '7-eleven', '7 eleven', 'wawa', 'sheetz',
+  'dollar', 'subway', 'mcdonald', 'burger king', 'wendy', 'taco bell',
+  'jack in the box', 'del taco', 'carl\'s jr', 'sonic drive',
+  'domino', 'pizza hut', 'little caesars', 'church\'s chicken',
+  'popeyes', 'raising cane', 'panda express', 'chipotle', 'wingstop',
+  'habit burger', 'in-n-out', 'five guys', 'shake shack',
+  'jamba', 'smoothie king', 'coffee bean', 'dutch bros',
+  'starbucks', 'dunkin', 'krispy kreme', 'baskin',
+  'supercuts', 'great clips', 'h&r block', 'uhaul',
+];
+
+function isRetailPlace(p, allowShopping = false) {
+  if (allowShopping) return false;
+  // Check Google place types
+  const types = p.types || [];
+  if (types.some(t => RETAIL_TYPES.has(t))) return true;
+  // Check name for retail keywords
+  const name = (p.name || '').toLowerCase();
+  if (RETAIL_NAME_KEYWORDS.some(kw => name.includes(kw))) return true;
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Dating suitability filter
+// Excludes places intended for children/families
+// Allows adult-friendly versions (bowling, arcade bars, D&B etc.)
+// ─────────────────────────────────────────────────────────────
+const KIDS_NAME_KEYWORDS = [
+  'kids', 'kid\'s', 'children', 'child\'s', 'family fun center',
+  'indoor playground', 'trampoline park', 'jump park', 'jump zone',
+  'play zone', 'playzone', 'soft play', 'chuck e cheese', "chuck e. cheese",
+  'kids gym', 'kiddie', 'kidz', 'little gym', 'bouncy castle',
+  'toddler', 'tot ', 'pee-wee', 'peewee', 'junior', 'discovery zone',
+  'fun factory', 'playplace', 'play place', 'play land', 'ninjump',
+  'urban air', 'sky zone', 'altitude trampoline',
+];
+
+// Google types that are almost exclusively child-focused
+const KIDS_TYPES = new Set([
+  'amusement_park', // keep only if name sounds adult (checked below)
+]);
+
+// Adult-friendly overrides — these are OK even if they sound similar
+const ADULT_FRIENDLY_NAMES = [
+  'dave & buster', "dave and buster", 'main event',
+  'bowlero', 'lucky strike', 'punch bowl',
+  'topgolf', 'k1 speed', 'octane raceway',
+  'axe', 'escape room', 'breakout',
+];
+
+export function isCoupleFriendly(place) {
+  const name  = (place.name || '').toLowerCase();
+  const types = place.types || [];
+
+  // ✅ Always allow explicit adult-friendly venues
+  if (ADULT_FRIENDLY_NAMES.some(kw => name.includes(kw))) return true;
+
+  // ❌ Exclude by name keywords
+  if (KIDS_NAME_KEYWORDS.some(kw => name.includes(kw))) return false;
+
+  // ❌ Exclude pure amusement parks unless name signals adult venue
+  if (types.includes('amusement_park')) {
+    const adultSignals = ['bar', 'lounge', 'golf', 'speed', 'race', 'axe', 'escape'];
+    if (!adultSignals.some(s => name.includes(s))) return false;
+  }
+
+  return true;
+}
+
 function filterAndSort(places, {
   minRating    = 4.0,
   minReviews   = 10,
   maxResults   = 12,
   selectedArea = '',
+  allowShopping = false,
 } = {}) {
+  // ✅ Remove retail/store results first — they are never date activities
+  const noRetail = places.filter(p => !isRetailPlace(p, allowShopping));
+
+  // ✅ Remove cheap/fast-food/generic chains — not date-worthy
+  const noCheap = noRetail.filter(p => {
+    const name = (p.name || '').toLowerCase();
+    return !CHEAP_NAME_KEYWORDS.some(kw => name.includes(kw));
+  });
+
+  // ✅ Remove kids/family-focused places — Plannie is for couples
+  const coupleFriendly = noCheap.filter(p => isCoupleFriendly(p));
+
+  // Fallback: relax filters progressively so we never return empty
+  const pool0 = coupleFriendly.length > 0 ? coupleFriendly
+              : noCheap.length > 0        ? noCheap
+              : noRetail.length > 0       ? noRetail
+              : places;
+
   // Quality filter — 3-tier fallback so we never return empty
-  const strict  = places.filter(p => (p.rating ?? 0) >= 4.2 && (p.totalRatings ?? 0) >= 20);
-  const lenient = places.filter(p => (p.rating ?? 0) >= minRating);
+  const strict  = pool0.filter(p => (p.rating ?? 0) >= 4.2 && (p.totalRatings ?? 0) >= 20);
+  const lenient = pool0.filter(p => (p.rating ?? 0) >= minRating);
   const pool    = strict.length >= 3 ? strict
                 : lenient.length > 0 ? lenient
-                : places;
+                : pool0;
 
   // Attach score to each place
   const scored = pool.map(p => ({
@@ -338,7 +474,7 @@ function filterAndSort(places, {
 // PART 3: vibe-based type filtering
 // ─────────────────────────────────────────────────────────────
 export async function getPlacesByVibe(vibe, location, options = {}) {
-  const { radius = 8000, maxResults = 12, selectedArea = '' } = options;
+  const { radius = 12000, maxResults = 12, selectedArea = '' } = options;
   const config = VIBE_CONFIG[vibe?.toLowerCase()];
 
   if (!config) throw new Error(`Unknown vibe: "${vibe}"`);
@@ -381,10 +517,11 @@ export async function getPlacesByVibe(vibe, location, options = {}) {
       }
     }
 
-    // Additional keyword passes (capped at 3)
+    // Additional keyword passes — search all keywords independently
+    // This ensures named venues like Bowlero, Dave & Buster's are found
     const kwResults = await Promise.allSettled(
-      config.keywords.slice(0, 3).map(keyword =>
-        fetchByType({ lat, lng, type: config.types[0], keyword, radius })
+      config.keywords.map(keyword =>
+        fetchByKeywordOnly({ lat, lng, keyword, radius })
       )
     );
     for (const r of kwResults) {
@@ -404,7 +541,15 @@ export async function getPlacesByVibe(vibe, location, options = {}) {
     distanceMiles: calcDistMiles({ lat, lng }, p.location),
   }));
 
-  return filterAndSort(withDist, { maxResults, selectedArea });
+  // Only allow shopping results for chill vibe
+  const allowShopping = vibe?.toLowerCase() === 'chill';
+  return filterAndSort(withDist, {
+    maxResults,
+    selectedArea,
+    allowShopping,
+    minRating:  config.minRating  || 4.0,
+    minReviews: config.minReviews || 10,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
