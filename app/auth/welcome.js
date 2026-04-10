@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useFonts, Baumans_400Regular } from '@expo-google-fonts/baumans';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
@@ -67,9 +66,6 @@ function AuthButton({ label, icon, onPress, variant = 'primary' }) {
 
 export default function WelcomeScreen() {
   const router = useRouter();
-
-  // Load Baumans font
-  const [fontsLoaded] = useFonts({ Baumans_400Regular });
 
   // ── Google Auth Session ────────────────────────────────────
   // Replace the placeholder IDs with your real Google OAuth client IDs
@@ -145,17 +141,14 @@ export default function WelcomeScreen() {
 
         {/* ── TOP — floating P letter, no box, no circle ── */}
         <View style={s.top}>
-          <Text style={s.bigP}>P</Text>
+          <Text style={[s.bigP, { fontFamily: 'Baumans_400Regular' }]}>P</Text>
         </View>
 
         {/* ── CENTER — "Plannie" + version ── */}
         <View style={s.center}>
           {/* "Plannie" — P in Baumans, "lannie" in Cormorant italic */}
           <Text style={s.brandRow}>
-            <Text style={[
-              s.brandP,
-              fontsLoaded && { fontFamily: 'Baumans_400Regular' },
-            ]}>P</Text>
+            <Text style={[s.brandP, { fontFamily: 'Baumans_400Regular' }]}>P</Text>
             <Text style={s.brandRest}>lannie</Text>
           </Text>
 
@@ -165,20 +158,22 @@ export default function WelcomeScreen() {
 
         {/* ── BOTTOM — CTA buttons ── */}
         <View style={s.bottom}>
-          {/* PRIMARY */}
-          <AuthButton
-            label="Continue with Apple"
-            icon="🍎"
-            onPress={handleApple}
-            variant="primary"
-          />
+          {/* Apple — iOS only, hidden on Android */}
+          {Platform.OS === 'ios' && (
+            <AuthButton
+              label="Continue with Apple"
+              icon="🍎"
+              onPress={handleApple}
+              variant="primary"
+            />
+          )}
 
-          {/* SECONDARY */}
+          {/* Google — primary on Android, secondary on iOS */}
           <AuthButton
             label="Continue with Google"
             icon="G"
             onPress={handleGoogle}
-            variant="secondary"
+            variant={Platform.OS === 'ios' ? 'secondary' : 'primary'}
           />
 
           {/* TERTIARY — text only */}

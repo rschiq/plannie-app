@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, CormorantGaramond_300Light, CormorantGaramond_300Light_Italic, CormorantGaramond_400Regular, CormorantGaramond_400Regular_Italic, CormorantGaramond_500Medium } from '@expo-google-fonts/cormorant-garamond';
 import { DMSans_300Light, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold } from '@expo-google-fonts/dm-sans';
+import { Baumans_400Regular } from '@expo-google-fonts/baumans';
 import { View, ActivityIndicator } from 'react-native';
 import { PlanProvider } from '../hooks/usePlan';
 import { PremiumProvider } from '../hooks/usePremium';
@@ -17,6 +18,7 @@ export default function RootLayout() {
     DMSans_400Regular,
     DMSans_500Medium,
     DMSans_600SemiBold,
+    Baumans_400Regular,   // ✅ Loaded globally here
   });
 
   if (!fontsLoaded) {
