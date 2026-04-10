@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { getPlacesByVibe } from '../../services/placesService';
@@ -69,6 +69,7 @@ function calcDistMiles(from, to) {
 }
 
 export default function AddonsScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
   const [addonType, setAddonType] = useState(plan.addonType || null);
@@ -221,7 +222,7 @@ export default function AddonsScreen() {
         subtitle="One finishing touch goes a long way." />
       <ProgressBar total={7} current={6} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
         {ADDON_OPTIONS.map((opt) => (
           <SelectableCard
             key={opt.key}
@@ -272,7 +273,7 @@ export default function AddonsScreen() {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      <View style={styles.bbar}>
+      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
         <AnimatedPrimaryButton label="Add to Plan →" onPress={handleFinish} variant="rose" disabled={!addonType} />
         <AnimatedOutlineButton label="Skip" onPress={handleSkip} />
       </View>
@@ -299,5 +300,5 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 40, marginBottom: 4 },
   emptyText: { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, textAlign: 'center', lineHeight: 22 },
   emptySub: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, textAlign: 'center', lineHeight: 19 },
-  bbar: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
+  bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });

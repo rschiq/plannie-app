@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useFonts, Baumans_400Regular } from '@expo-google-fonts/baumans';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
@@ -73,10 +74,14 @@ export default function WelcomeScreen() {
   // ── Google Auth Session ────────────────────────────────────
   // Replace the placeholder IDs with your real Google OAuth client IDs
   // from https://console.cloud.google.com/apis/credentials
+  // ── Google Auth Session ───────────────────────────────────
+  // iosClientId uses webClientId as placeholder until real iOS OAuth client
+  // is created in Google Cloud Console (needed for App Store release)
   const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId:     'YOUR_IOS_CLIENT_ID',
     androidClientId: '147011410264-jbt4i39tevdu9er4r8d94u2khm7qq968.apps.googleusercontent.com',
+    iosClientId:     '147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com',
     webClientId:     '147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com',
+    redirectUri:     AuthSession.makeRedirectUri({ useProxy: true }),
   });
 
   // Handle the response from Google
@@ -115,7 +120,7 @@ export default function WelcomeScreen() {
   }
 
   function handleGoogle() {
-    promptAsync();
+    promptAsync({ useProxy: true });
   }
 
   function handleEmail() {

@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, Animated, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { usePlan } from '../../hooks/usePlan';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -39,6 +39,7 @@ function TapCard({ onPress, selected, children, style }) {
 }
 
 export default function DetailsScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
   const today = new Date().toISOString().split('T')[0];
@@ -219,7 +220,7 @@ export default function DetailsScreen() {
       timeDisplay: fmtTime(timeVal),
       budget,
     });
-    router.push('/plan/how');
+    router.push('/plan/who');
   }
 
   const canContinue = cityVal.trim().length > 0;
@@ -234,7 +235,7 @@ export default function DetailsScreen() {
       />
       <ProgressBar total={7} current={1} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]} keyboardShouldPersistTaps="handled">
 
         {/* DATE */}
         <Text style={styles.sectionLabel}>📅  When's the date?</Text>
@@ -363,7 +364,7 @@ export default function DetailsScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      <View style={styles.bbar}>
+      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
         <AnimatedPrimaryButton label="Next →" onPress={handleNext} disabled={!canContinue} />
       </View>
     </SafeAreaView>
@@ -407,5 +408,5 @@ const styles = StyleSheet.create({
   budgetLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.gray3, textAlign: 'center', lineHeight: 13 },
   budgetLabelActive: { color: colors.rose },
   pickerWrap: { backgroundColor: '#F2EDE8', borderRadius: 14, marginTop: 8, overflow: 'hidden' },
-  bbar: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
+  bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });

@@ -1,13 +1,16 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../constants/theme';
 import { usePlan } from '../../hooks/usePlan';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { resetPlan } = usePlan();
+
+
 
   return (
     // ✅ Midnight Velvet gradient — deep purple-black with subtle depth
@@ -55,7 +58,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Stats row */}
-        <View style={styles.stats}>
+        <View style={[styles.stats, { paddingBottom: Math.max(insets.bottom + 24, 48) }]}>
           {[
             { n: '4.9★', l: 'Rating' },
             { n: '18k+', l: 'Dates Planned' },
@@ -163,7 +166,7 @@ const styles = StyleSheet.create({
   },
 
   // Stats
-  stats: { flexDirection: 'row', paddingHorizontal: 32, paddingBottom: 48, gap: 32 },
+  stats: { flexDirection: 'row', paddingHorizontal: 32, gap: 32 },
   stat:  {},
   statNum: {
     fontFamily: fonts.display,

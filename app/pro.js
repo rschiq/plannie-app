@@ -9,7 +9,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Alert, Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { usePremium } from '../hooks/usePremium';
@@ -24,6 +24,7 @@ const BENEFITS = [
 ];
 
 export default function ProScreen() {
+  const insets = useSafeAreaInsets();
   const router   = useRouter();
   const { setIsPremium } = usePremium();
   const [loading, setLoading] = useState(false);

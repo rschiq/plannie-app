@@ -4,9 +4,10 @@
     "slug": "plannie",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "backgroundColor": "#2C2520"
+      "backgroundColor": "#1A0F30"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -17,7 +18,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#2C2520"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A0F30"
       },
       "package": "com.plannie.app",
       "googleServicesFile": "./google-services.json",

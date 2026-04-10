@@ -1251,8 +1251,14 @@ export default function CartScreen() {
                 returnKeyType="done"
               />
             )}
-            <TouchableOpacity style={styles.btnPrimary} onPress={handleSave} activeOpacity={0.88}>
-              <Text style={styles.btnPrimaryText}>✦ Save & Start This Date</Text>
+            <TouchableOpacity
+              style={[styles.btnPrimary, timelineItems.length === 0 && { backgroundColor: colors.gray4 }]}
+              onPress={timelineItems.length > 0 ? handleSave : null}
+              activeOpacity={timelineItems.length > 0 ? 0.88 : 1}
+            >
+              <Text style={styles.btnPrimaryText}>
+                {timelineItems.length === 0 ? 'Add items to save' : '✦ Save & Start This Date'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1457,7 +1463,7 @@ const swap = StyleSheet.create({
 
 // ── Place detail sheet styles ────────────────────────────────
 const detail = StyleSheet.create({
-  photoScroll:      { height: 220 },
+  photoScroll:      { height: 220, width: SCREEN_W },
   photo:            { width: SCREEN_W, height: 220 },
   photoPlaceholder: { height: 160, backgroundColor: colors.cream3, alignItems: 'center', justifyContent: 'center' },
   photoPlaceholderIcon: { fontSize: 40 },

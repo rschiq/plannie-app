@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
 import { RESTAURANTS } from '../../data';
@@ -32,6 +32,7 @@ function calcDistMiles(from, to) {
 }
 
 export default function FoodScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
   const [selected, setSelected] = useState(plan.food);
@@ -43,16 +44,30 @@ export default function FoodScreen() {
   async function loadRestaurants() {
     setLoading(true);
     try {
-      // ✅ Use stored coords only — no geocoding fallback
-      // Geocoding "Studio City" returns broad LA coords → wrong results
-      if (!plan.coords?.lat || !plan.coords?.lng) {
-        console.log('[Food] No coords stored — using local fallback data');
+      // ✅ Use stored coords if available, geocode city as fallback
+      let baseLat, baseLng;
+      if (plan.coords?.lat && plan.coords?.lng) {
+        baseLat = plan.coords.lat;
+        baseLng = plan.coords.lng;
+      } else if (plan.city) {
+        console.log('[Food] No coords — geocoding city:', plan.city);
+        const geoRes  = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(plan.city)}&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w`
+        );
+        const geoData = await geoRes.json();
+        if (geoData.status === 'OK') {
+          baseLat = geoData.results[0].geometry.location.lat;
+          baseLng = geoData.results[0].geometry.location.lng;
+        } else {
+          setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+          setLoading(false);
+          return;
+        }
+      } else {
         setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
         setLoading(false);
         return;
       }
-
-      const { lat: baseLat, lng: baseLng } = plan.coords;
       const selectedArea = (plan.city || '').split(',')[0].trim();
 
       // PART 4: Multi-stop — search near activity first
@@ -170,7 +185,7 @@ export default function FoodScreen() {
           <Text style={styles.loadingText}>Finding restaurants near you…</Text>
         </View>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
           {items.map(item => (
             <ItemCard
               key={item.id}
@@ -184,7 +199,7 @@ export default function FoodScreen() {
         </ScrollView>
       )}
 
-      <View style={styles.bbar}>
+      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
         <PrimaryButton label={btnLabel} onPress={handleAdd} variant="rose" disabled={!selected} />
         <OutlineButton label="Skip" onPress={handleSkip} />
       </View>
@@ -198,5 +213,5 @@ const styles = StyleSheet.create({
   content:     { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
   loader:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontFamily: fonts.body, fontSize: 14, color: colors.gray2 },
-  bbar:        { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, backgroundColor: colors.cream },
+  bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });

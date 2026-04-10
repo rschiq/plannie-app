@@ -35,6 +35,10 @@ export function PlanProvider({ children }) {
     food: null,
     addonType: null,
     addonItem: null,
+    // ── New structured flow fields ──
+    group: null,       // 'couples' | 'friends'
+    moment: null,      // e.g. 'First Date' | 'Going Out'
+    category: null,    // 'food' | 'drinks' | 'coffee' | 'activity'
   });
 
   const [savedPlans, setSavedPlans] = useState(SAMPLE_SAVED_PLANS);
@@ -55,6 +59,9 @@ export function PlanProvider({ children }) {
       food: null,
       addonType: null,
       addonItem: null,
+      group: null,
+      moment: null,
+      category: null,
     });
 
   const generatePlan = (vibe, budget, time) => {
@@ -114,6 +121,46 @@ export function PlanProvider({ children }) {
     setSavedPlans((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // ── Save a single place (from new results flow) ───────────────
+  const saveSinglePlace = (place, context = {}) => {
+    const CATEGORY_EMOJIS = { food: '🍽️', drinks: '🍸', coffee: '☕', activity: '🎯' };
+    const emoji = CATEGORY_EMOJIS[context.category] || '📍';
+    const newPlan = {
+      id:          `sp_${Date.now()}`,
+      title:       place.name,
+      date:        '',
+      dateDisplay: 'Saved Place',
+      city:        context.city || '',
+      vibe:        context.moment || 'Custom',
+      budget:      '$$',
+      items:       [`${emoji} ${place.name}`, place.address].filter(Boolean),
+      favorite:    false,
+      note:        '',
+      rating:      0,
+      favoriteMoment: '',
+      // ── Extra data for single-place saves ──
+      placeData: {
+        id:           place.id,
+        name:         place.name,
+        category:     place.category || context.category || '',
+        address:      place.address  || '',
+        distance:     place.distance || null,
+        rating:       place.rating   || null,
+        totalRatings: place.totalRatings || 0,
+        photoUrl:     place.photoUrl || null,
+        location:     place.location || null,
+      },
+      plannerContext: {
+        group:    context.group    || null,
+        moment:   context.moment   || null,
+        category: context.category || null,
+        city:     context.city     || null,
+      },
+    };
+    setSavedPlans((prev) => [newPlan, ...prev]);
+    return newPlan;
+  };
+
   const toggleFavorite = (id) =>
     setSavedPlans((prev) =>
       prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p))
@@ -153,6 +200,7 @@ export function PlanProvider({ children }) {
         savedPlans,
         savePlan,
         deletePlan,
+        saveSinglePlace,
         toggleFavorite,
         updatePlanMeta,   // ✅ new
         generatePlan,
