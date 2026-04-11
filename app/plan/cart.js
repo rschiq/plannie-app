@@ -173,6 +173,7 @@ function calcDistMiles(from, to) {
 // ─── Place Detail Sheet ───────────────────────────────────────
 // Shows full details of a swap candidate before confirming
 function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose, onSwap, onRemove }) {
+  const sheetInsets = useSafeAreaInsets();
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -228,7 +229,7 @@ function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose, onSwap,
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={[styles.sheet, { maxHeight: '90%', padding: 0, overflow: 'hidden' }]}>
+        <TouchableOpacity activeOpacity={1} style={[styles.sheet, { maxHeight: '90%', padding: 0, overflow: 'hidden', paddingBottom: Math.max(sheetInsets?.bottom ?? 0, 0) }]}>
 
           {/* ── Photos ── */}
           {photos.length > 0 && (
@@ -366,6 +367,7 @@ function PlaceDetailSheet({ visible, place, swapKey, onConfirm, onClose, onSwap,
 // ─── Swap Sheet ───────────────────────────────────────────────
 // Single Modal with two views: list → detail (no nested Modals)
 function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
+  const insets = useSafeAreaInsets();
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(false);
   const [preview, setPreview]   = useState(null);   // place being previewed
@@ -696,7 +698,7 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
               )}
 
               {/* Cancel pinned at bottom, outside ScrollView */}
-              <TouchableOpacity style={[styles.cancelBtn, { margin: 24, marginTop: 0 }]} onPress={onClose} activeOpacity={0.8}>
+              <TouchableOpacity style={[styles.cancelBtn, { margin: 24, marginTop: 0, marginBottom: Math.max(insets.bottom + 8, 24) }]} onPress={onClose} activeOpacity={0.8}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -1213,7 +1215,7 @@ export default function CartScreen() {
       </ScrollView>
 
       {/* ── Bottom Bar ── */}
-      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View style={[styles.bbar, { paddingBottom: Math.max(insets.bottom + 10, 20) }]}>
         {isSaved ? (
           <View style={styles.savedState}>
             <Text style={styles.savedBannerText}>🎉 Plan saved!</Text>
@@ -1377,8 +1379,8 @@ const styles = StyleSheet.create({
   btnPrimary:     { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 18, alignItems: 'center' },
   // ✅ Explicit warm white text — colors.white is now dark surface #1E1C2C
   btnPrimaryText: { fontFamily: fonts.bodyMedium, fontSize: 16, color: '#F2EDE8', letterSpacing: 0.2 },
-  rowActions:     { flexDirection: 'row', gap: 8 },
-  btnSecondary:   { flex: 1, backgroundColor: colors.cream2, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
+  rowActions:     { flexDirection: 'row', gap: 8, width: '100%', marginTop: 4 },
+  btnSecondary:   { flex: 1, backgroundColor: colors.cream2, borderRadius: 999, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   btnSecondaryText:{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
 
   // ── Special date ────────────────────────────────────────────

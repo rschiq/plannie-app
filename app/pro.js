@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   // ── Hero ──────────────────────────────────────────────────
   hero:    { paddingHorizontal: 28, paddingTop: 20, paddingBottom: 32 },
   backBtn: { marginBottom: 20 },
-  backText:{ fontFamily: fonts.bodyMedium, fontSize: 14, color: 'rgba(242,237,232,0.55)' },
+  backText:{ fontFamily: fonts.bodyMedium, fontSize: 12, color: 'rgba(242,237,232,0.55)' },
 
   badge:    {
     alignSelf: 'flex-start',
@@ -184,9 +184,9 @@ const styles = StyleSheet.create({
 
   heroTitle:{
     fontFamily: fonts.display,
-    fontSize: 36,
+    fontSize: 30,
     color: '#F2EDE8',
-    lineHeight: 42,
+    lineHeight: 38,
     marginBottom: 10,
   },
   heroSub:  {

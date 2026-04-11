@@ -1,56 +1,80 @@
 // services/nearbyPlacesService.js
 // ─────────────────────────────────────────────────────────────
-// Plannie — Nearby Places Service
-// Uses Google Places Nearby Search (NOT text search)
-// Coordinates-first, area-aware, scored, variety-controlled
+// Plannie — Places Search Service
+// Architecture: Local-first multi-pass pipeline
+//
+// PIPELINE:
+//   Pass A → strict local search (tight radius, area-matched only)
+//   Pass B → local radius expansion (still area-first)
+//   Pass C → nearby expansion (only if A+B insufficient)
+//
+// SORTING ORDER:
+//   1. isInArea (locality match) — ALWAYS first
+//   2. distance from selected coords
+//   3. rating + reviews — ONLY within same locality group
+//
+// ROOT CAUSE OF STUDIO CITY PROBLEM (now fixed):
+//   Old code sorted globally by rating BEFORE locality filtering.
+//   A 4.8★ Los Angeles restaurant beat a 4.4★ Studio City restaurant
+//   even though the user selected Studio City. Fixed by splitting
+//   results into local vs non-local buckets FIRST, sorting each
+//   bucket independently, then combining local-first.
 // ─────────────────────────────────────────────────────────────
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
+const TARGET_COUNT   = 15;
 
-// ── Vibe → place types mapping ────────────────────────────────
-const VIBE_TYPES = {
-  // New flow moments
-  first_date:       ['restaurant', 'cafe', 'bakery'],
-  casual_hangout:   ['restaurant', 'cafe', 'bar'],
-  date_night:       ['restaurant', 'bar', 'night_club'],
-  special_occasion: ['restaurant', 'bar'],
-  chill:            ['cafe', 'park', 'museum', 'restaurant'],
-  going_out:        ['bar', 'night_club', 'restaurant'],
-  activity:         ['bowling_alley', 'amusement_center', 'tourist_attraction'],
-
-  // Category overrides
+const CATEGORY_TYPES = {
   food:     ['restaurant'],
   drinks:   ['bar', 'night_club'],
   coffee:   ['cafe'],
-  activity: [
-    'bowling_alley', 'amusement_center',
-    'tourist_attraction', 'night_club',
-  ],
+  activity: ['bowling_alley', 'tourist_attraction', 'night_club', 'movie_theater'],
 };
 
-// ── Keywords per category+moment ──────────────────────────────
 const MOMENT_KEYWORDS = {
-  first_date:       { food: 'romantic restaurant',  drinks: 'cocktail bar',      coffee: 'cozy cafe',       activity: 'bowling mini golf' },
-  casual_hangout:   { food: 'casual restaurant',    drinks: 'pub bar',           coffee: 'coffee shop',     activity: 'arcade games' },
-  date_night:       { food: 'fine dining',          drinks: 'wine bar lounge',   coffee: 'dessert cafe',    activity: 'entertainment' },
-  special_occasion: { food: 'upscale restaurant',   drinks: 'rooftop bar',       coffee: 'patisserie',      activity: 'topgolf' },
-  chill:            { food: 'casual dining',        drinks: 'sports bar',        coffee: 'coffee tea',      activity: 'park museum' },
-  going_out:        { food: 'popular restaurant',   drinks: 'nightclub bar',     coffee: 'late night',      activity: 'escape room' },
-  activity:         { food: 'quick bite',           drinks: 'game bar',          coffee: 'boba cafe',       activity: 'axe throwing' },
+  first_date:       { food: 'romantic restaurant date night',  drinks: 'cocktail bar',       coffee: 'cozy cafe',       activity: 'topgolf mini golf ice skating karaoke stand up comedy' },
+  casual_hangout:   { food: 'casual restaurant',               drinks: 'pub bar sports',     coffee: 'coffee shop',     activity: 'bowling karaoke mini golf skating' },
+  date_night:       { food: 'fine dining dinner upscale',      drinks: 'wine bar lounge',    coffee: 'dessert cafe',    activity: 'topgolf stand up comedy movie theater karaoke' },
+  special_occasion: { food: 'upscale fine dining',             drinks: 'rooftop bar',        coffee: 'patisserie',      activity: 'topgolf golf driving range comedy show' },
+  chill:            { food: 'casual dining',                   drinks: 'sports bar pub',     coffee: 'coffee tea',      activity: 'mini golf ice skating bowling movie theater' },
+  going_out:        { food: 'popular restaurant nightlife',    drinks: 'nightclub bar',      coffee: 'late night cafe', activity: 'karaoke stand up comedy escape room' },
+  activity:         { food: 'quick bite',                      drinks: 'game bar',           coffee: 'boba cafe',       activity: 'topgolf bowling axe throwing skating' },
 };
 
-// ── Blocked name keywords ─────────────────────────────────────
-const BLOCKED_KEYWORDS = [
-  'gym', 'fitness', 'crossfit', 'ymca', 'planet fitness',
-  'hospital', 'clinic', 'medical', 'dental', 'pharmacy',
-  'chuck e cheese', 'kids', 'kiddie', 'kidz',
-  'trampoline park', 'sky zone', 'urban air',
-  'school', 'church', 'storage', 'auto repair',
-  'state recreation area', 'park recreation',
+const ACTIVITY_KEYWORD_SEARCHES = [
+  { keyword: 'topgolf'              },
+  { keyword: 'golf driving range'   },
+  { keyword: 'mini golf'            },
+  { keyword: 'bowling alley'        },
+  { keyword: 'billiards pool hall'  },
+  { keyword: 'ice skating rink'     },
+  { keyword: 'roller skating'       },
+  { keyword: 'karaoke bar'          },
+  { keyword: 'stand up comedy club' },
+  { keyword: 'escape room'          },
+  { keyword: 'axe throwing'         },
 ];
 
-// ── Haversine distance (miles) ────────────────────────────────
-export function calculateDistance(from, to) {
+const BLOCKED = [
+  'gamestop','game stop','best buy','walmart','target','costco',
+  'home depot','dollar tree','dollar general','marshalls','ross ',
+  'walgreens','cvs','rite aid','dollar store','five below',
+  'dave and buster','dave & buster','round 1','round one',
+  'main event','palace entertainment','chuck e cheese',
+  'arcade','barcade',
+  'kids','kiddie','kidz','children','toddler','indoor playground',
+  'soft play','bounce','trampoline','sky zone','urban air',
+  'gym','fitness','crossfit','ymca','planet fitness','orangetheory',
+  'hospital','clinic','medical','dental','pharmacy',
+  'school','church','storage','auto repair',
+];
+
+function isBlocked(name) {
+  const n = (name || '').toLowerCase();
+  return BLOCKED.some(kw => n.includes(kw));
+}
+
+export function calcDistance(from, to) {
   if (!from?.lat || !to?.lat) return 99;
   const R    = 3958.8;
   const dLat = ((to.lat - from.lat) * Math.PI) / 180;
@@ -62,186 +86,157 @@ export function calculateDistance(from, to) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Area match check ──────────────────────────────────────────
 export function isInArea(place, areaName) {
   if (!areaName) return false;
   const area     = areaName.toLowerCase().trim();
   const vicinity = (place.vicinity || '').toLowerCase();
   const addr     = (place.formatted_address || place.vicinity || '').toLowerCase();
-
-  // Full phrase match first — most reliable
   if (vicinity.includes(area) || addr.includes(area)) return true;
-
-  // All significant words must appear (handles "North Hollywood", "Studio City")
   const words = area.split(/\s+/).filter(w => w.length > 2);
   if (words.length > 1) {
     if (words.every(w => vicinity.includes(w))) return true;
     if (words.every(w => addr.includes(w)))     return true;
   }
-
   return false;
 }
 
-// ── Smart scoring ─────────────────────────────────────────────
-export function scorePlace(place, originCoords, areaName) {
-  const rating   = place.rating || 0;
-  const reviews  = place.user_ratings_total || 0;
-  const dist     = calculateDistance(originCoords, {
-    lat: place.geometry?.location?.lat,
-    lng: place.geometry?.location?.lng,
-  });
-
-  // Base score
-  let score = (rating * 2) + (reviews / 1000) - (dist * 1.5);
-
-  // Area bonus/penalty — most important factor
-  if (isInArea(place, areaName)) {
-    score += 3;  // in selected area → big boost
-  } else {
-    score -= 3;  // outside area → penalty
-  }
-
-  return score;
+function passesQuality(place, minRating = 3.8, minReviews = 10) {
+  if ((place.rating ?? 0) < minRating)             return false;
+  if ((place.user_ratings_total ?? 0) < minReviews) return false;
+  if (isBlocked(place.name))                        return false;
+  return true;
 }
 
-// ── Block check ───────────────────────────────────────────────
-function isBlocked(place) {
-  const name = (place.name || '').toLowerCase();
-  return BLOCKED_KEYWORDS.some(kw => name.includes(kw));
-}
-
-// ── Single nearby search pass ─────────────────────────────────
 async function nearbySearch({ lat, lng, type, keyword, radius }) {
-  const params = new URLSearchParams({
-    location: `${lat},${lng}`,
-    radius:   String(radius),
-    type,
-    key:      GOOGLE_API_KEY,
-  });
+  const params = new URLSearchParams({ location: `${lat},${lng}`, radius: String(radius), type, key: GOOGLE_API_KEY });
   if (keyword) params.set('keyword', keyword);
+  try {
+    const res  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
+    const data = await res.json();
+    return data.results || [];
+  } catch { return []; }
+}
 
-  const res  = await fetch(
-    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`
+async function batchSearch({ lat, lng, types, keyword, radius, seen }) {
+  const results = [];
+  await Promise.allSettled(
+    types.map(async (type) => {
+      const places = await nearbySearch({ lat, lng, type, keyword, radius });
+      for (const p of places) {
+        if (!seen.has(p.place_id)) { seen.add(p.place_id); results.push(p); }
+      }
+    })
   );
-  const data = await res.json();
-  return data.results || [];
+  return results;
 }
 
-// ── Variety cap: max N places per type ───────────────────────
-function enforceVariety(places, maxPerType = 4) {
-  const typeCounts = {};
-  const result     = [];
-  for (const p of places) {
-    const primaryType = (p.types || ['other'])[0];
-    typeCounts[primaryType] = (typeCounts[primaryType] || 0);
-    if (typeCounts[primaryType] < maxPerType) {
-      typeCounts[primaryType]++;
-      result.push(p);
-    }
-  }
-  return result;
-}
-
-// ── Main export ───────────────────────────────────────────────
-export async function getNearbyPlaces({
-  lat,
-  lng,
-  category,       // 'food' | 'drinks' | 'coffee' | 'activity'
-  moment,         // e.g. 'first_date' | 'going_out'
-  areaName,       // e.g. 'Studio City'
-  expandedRadius, // true = wider search, relax area filter
-}) {
-  const types   = VIBE_TYPES[category]  || ['restaurant'];
-  const keyword = MOMENT_KEYWORDS[moment]?.[category] || '';
-
-  // ── Adaptive radius: tight by default, wider when expanded ──
-  const radiusSteps = expandedRadius ? [8000, 12000] : [2000, 3500, 5000];
-  const seen        = new Set();
-  const allRaw      = [];
-
-  for (const radius of radiusSteps) {
-    // Fetch all types in parallel for this radius
-    await Promise.allSettled(
-      types.map(async (type) => {
-        const results = await nearbySearch({ lat, lng, type, keyword, radius });
-        for (const p of results) {
-          if (!seen.has(p.place_id)) {
-            seen.add(p.place_id);
-            allRaw.push(p);
-          }
-        }
-      })
-    );
-
-    // Count valid results (after basic quality filter)
-    const validCount = allRaw.filter(p =>
-      (p.rating ?? 0) >= 4.0 &&
-      (p.user_ratings_total ?? 0) >= 20 &&
-      !isBlocked(p)
-    ).length;
-
-    // If we have enough, stop expanding
-    if (validCount >= 8) break;
-  }
-
-  // ── Filter ────────────────────────────────────────────────
-  const filtered = allRaw.filter(p => {
-    if ((p.rating ?? 0) < 4.0)            return false;
-    if ((p.user_ratings_total ?? 0) < 20)  return false;
-    if (isBlocked(p))                      return false;
-    return true;
+function sortBucket(places, origin) {
+  return places.slice().sort((a, b) => {
+    const dA = calcDistance(origin, a.geometry?.location);
+    const dB = calcDistance(origin, b.geometry?.location);
+    if (Math.abs(dA - dB) < 1.0) return (b.rating ?? 0) - (a.rating ?? 0);
+    return dA - dB;
   });
+}
 
-  // ── Score each place ──────────────────────────────────────
-  const origin = { lat, lng };
-  const scored = filtered.map(p => ({
-    ...p,
-    _score:    scorePlace(p, origin, areaName),
-    _inArea:   isInArea(p, areaName),
-    _distance: calculateDistance(origin, {
-      lat: p.geometry?.location?.lat,
-      lng: p.geometry?.location?.lng,
-    }),
-  }));
-
-  // ── Sort ──────────────────────────────────────────────────
-  // Expanded mode: sort purely by distance then score
-  // Default mode: area-first 3-bucket sort
-  let sorted;
-  if (expandedRadius) {
-    sorted = scored.sort((a, b) =>
-      a._distance - b._distance || b._score - a._score
-    );
-  } else {
-    const bucket1 = scored.filter(p => p._inArea)
-      .sort((a, b) => b._score - a._score);
-    const bucket2 = scored.filter(p => !p._inArea && p._distance <= 8)
-      .sort((a, b) => a._distance - b._distance || b._score - a._score);
-    const bucket3 = scored.filter(p => !p._inArea && p._distance > 8)
-      .sort((a, b) => b._score - a._score);
-    sorted = [...bucket1, ...bucket2, ...bucket3];
-  }
-
-  // ── Variety cap ───────────────────────────────────────────
-  const varied = enforceVariety(sorted, 4);
-
-  // ── Map to clean output shape ─────────────────────────────
-  return varied.slice(0, 15).map(p => ({
-    id:             p.place_id,
-    name:           p.name,
-    rating:         p.rating ? parseFloat(p.rating).toFixed(1) : null,
-    totalRatings:   p.user_ratings_total || 0,
-    address:        p.vicinity || '',
-    distance:       p._distance.toFixed(1),
-    inArea:         p._inArea,
-    types:          p.types || [],
-    photoReference: p.photos?.[0]?.photo_reference || null,
-    photoUrl:       p.photos?.[0]?.photo_reference
+function mapPlace(p, origin, areaName, isExpanded = false) {
+  const dist = calcDistance(origin, p.geometry?.location);
+  return {
+    id:           p.place_id,
+    name:         p.name,
+    rating:       p.rating ? parseFloat(p.rating).toFixed(1) : null,
+    totalRatings: p.user_ratings_total || 0,
+    address:      p.vicinity || '',
+    distance:     dist.toFixed(1),
+    inArea:       isInArea(p, areaName),
+    isExpanded,
+    types:        p.types || [],
+    photoUrl:     p.photos?.[0]?.photo_reference
       ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
       : null,
     location: {
       lat: p.geometry?.location?.lat,
       lng: p.geometry?.location?.lng,
     },
-  }));
+  };
+}
+
+// ── MAIN: getNearbyPlaces ─────────────────────────────────────
+export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'casual_hangout', areaName = '' }) {
+  const types   = CATEGORY_TYPES[category] || ['restaurant'];
+  const keyword = MOMENT_KEYWORDS[moment]?.[category] || '';
+  const origin  = { lat, lng };
+  const seen    = new Set();
+  const localRaw    = [];
+  const nonLocalRaw = [];
+
+  // Pass A: tight local search (3km)
+  const passA = await batchSearch({ lat, lng, types, keyword, radius: 3000, seen });
+  if (category === 'activity') {
+    await Promise.allSettled(ACTIVITY_KEYWORD_SEARCHES.map(async ({ keyword: kw }) => {
+      const places = await nearbySearch({ lat, lng, type: 'tourist_attraction', keyword: kw, radius: 5000 });
+      for (const p of places) { if (!seen.has(p.place_id)) { seen.add(p.place_id); passA.push(p); } }
+    }));
+  }
+  for (const p of passA) {
+    if (!passesQuality(p)) continue;
+    isInArea(p, areaName) ? localRaw.push(p) : nonLocalRaw.push(p);
+  }
+
+  // Pass B: expand radius if not enough local (5km → 8km → 12km)
+  if (localRaw.length < TARGET_COUNT) {
+    for (const radius of [5000, 8000, 12000]) {
+      const more = await batchSearch({ lat, lng, types, keyword, radius, seen });
+      if (category === 'activity') {
+        await Promise.allSettled(ACTIVITY_KEYWORD_SEARCHES.map(async ({ keyword: kw }) => {
+          const places = await nearbySearch({ lat, lng, type: 'tourist_attraction', keyword: kw, radius });
+          for (const p of places) { if (!seen.has(p.place_id)) { seen.add(p.place_id); more.push(p); } }
+        }));
+      }
+      for (const p of more) {
+        if (!passesQuality(p)) continue;
+        isInArea(p, areaName) ? localRaw.push(p) : nonLocalRaw.push(p);
+      }
+      if (localRaw.length >= TARGET_COUNT) break;
+    }
+  }
+
+  // Pass C: wider fallback to fill non-local slots
+  if (localRaw.length + nonLocalRaw.length < TARGET_COUNT) {
+    const more = await batchSearch({ lat, lng, types, keyword, radius: 20000, seen });
+    for (const p of more) {
+      if (!passesQuality(p, 3.8, 10)) continue;
+      if (!isInArea(p, areaName)) nonLocalRaw.push(p);
+    }
+  }
+
+  // Sort each bucket independently — LOCAL always before NON-LOCAL
+  const combined = [
+    ...sortBucket(localRaw, origin),
+    ...sortBucket(nonLocalRaw, origin),
+  ];
+
+  return combined.slice(0, 20).map(p => mapPlace(p, origin, areaName, !isInArea(p, areaName)));
+}
+
+// ── EXPORT: getExpandedPlaces ─────────────────────────────────
+// Called by "Expand to Nearby Areas" button.
+// Returns NEW places not already shown, from wider radius.
+export async function getExpandedPlaces({ lat, lng, category = 'food', moment = 'casual_hangout', areaName = '', existingIds = [] }) {
+  const types   = CATEGORY_TYPES[category] || ['restaurant'];
+  const keyword = MOMENT_KEYWORDS[moment]?.[category] || '';
+  const origin  = { lat, lng };
+  const seen    = new Set(existingIds);
+  const all     = [];
+
+  for (const radius of [15000, 25000, 40000]) {
+    const results = await batchSearch({ lat, lng, types, keyword, radius, seen });
+    for (const p of results) {
+      if (!passesQuality(p, 3.8, 10)) continue;
+      all.push(p);
+    }
+    if (all.length >= 15) break;
+  }
+
+  return sortBucket(all, origin).slice(0, 15).map(p => mapPlace(p, origin, areaName, true));
 }

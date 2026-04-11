@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Alert, Linking, Modal, TextInput, KeyboardAvoidingView, Platform,
+  Alert, Linking, Modal, Image, ActivityIndicator, Dimensions,
+  TextInput, KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radius, shadow, VIBE_COLORS } from '../../constants/theme';
 import { SmallButton } from '../../components/UI';
+const SCREEN_W = Dimensions.get('window').width;
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
+
 
 // ─────────────────────────────────────────────────────────────
 // HELPER — is this plan in the past?
@@ -187,8 +192,8 @@ function UpcomingCard({ plan, onOpen, onCalendar, onDelete, onFavorite }) {
           <TouchableOpacity style={styles.iconBtn} onPress={onCalendar} activeOpacity={0.8}>
             <Text style={styles.iconBtnText}>📅</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDanger]} onPress={onDelete} activeOpacity={0.8}>
-            <Text style={styles.iconBtnText}>🗑️</Text>
+          <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDanger]} onPress={onDelete} activeOpacity={0.7}>
+            <Ionicons name="trash-outline" size={16} color="#E57373" />
           </TouchableOpacity>
         </View>
       </View>
@@ -302,13 +307,172 @@ function SectionHeader({ label, count, sub }) {
 // ─────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────
+
+// ── Place Detail Sheet for saved single places ────────────────
+function SavedPlaceDetailSheet({ place, visible, onClose }) {
+  const insets  = useSafeAreaInsets();
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !place?.id) return;
+    setDetails(null);
+    setLoading(true);
+    fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.id}&fields=name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos&key=${GOOGLE_API_KEY}`
+    )
+      .then(r => r.json())
+      .then(d => { if (d.result) setDetails(d.result); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [visible, place?.id]);
+
+  if (!place) return null;
+
+  const photos  = details?.photos || [];
+  const phone   = details?.formatted_phone_number;
+  const website = details?.website;
+  const address = details?.formatted_address || place.address;
+
+  function buildPhoto(ref) {
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photoreference=${ref}&key=${GOOGLE_API_KEY}`;
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={ds.overlay}>
+        <View style={[ds.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={ds.handle} />
+
+          {/* Photos */}
+          {loading ? (
+            <View style={ds.photoPlaceholder}>
+              <ActivityIndicator color={colors.rose} />
+            </View>
+          ) : photos.length > 0 ? (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={ds.photoScroll}>
+              {photos.slice(0, 5).map((ph, i) => (
+                <Image key={i} source={{ uri: buildPhoto(ph.photo_reference) }}
+                  style={[ds.photo, { width: SCREEN_W }]} resizeMode="cover" />
+              ))}
+            </ScrollView>
+          ) : place.photoUrl ? (
+            <Image source={{ uri: place.photoUrl }} style={[ds.photo, { width: SCREEN_W }]} resizeMode="cover" />
+          ) : (
+            <View style={ds.photoPlaceholder}><Text style={ds.photoIcon}>📍</Text></View>
+          )}
+
+          <ScrollView style={ds.body} showsVerticalScrollIndicator={false}>
+            <Text style={ds.name}>{place.name}</Text>
+            {place.category ? <Text style={ds.category}>{place.category}</Text> : null}
+
+            {place.rating ? (
+              <View style={ds.ratingRow}>
+                <Text style={ds.rating}>⭐ {place.rating}</Text>
+                {place.totalRatings > 0 && (
+                  <Text style={ds.reviews}>({place.totalRatings.toLocaleString()} reviews)</Text>
+                )}
+              </View>
+            ) : null}
+
+            {place.distance ? (
+              <View style={ds.row}>
+                <Text style={ds.rowIcon}>🚗</Text>
+                <Text style={ds.rowText}>{place.distance} mi away</Text>
+              </View>
+            ) : null}
+
+            {address ? (
+              <View style={ds.row}>
+                <Text style={ds.rowIcon}>📍</Text>
+                <Text style={ds.rowText}>{address}</Text>
+              </View>
+            ) : null}
+
+            {phone ? (
+              <TouchableOpacity style={ds.row} onPress={() => Linking.openURL(`tel:${phone}`)}>
+                <Text style={ds.rowIcon}>📞</Text>
+                <Text style={[ds.rowText, ds.link]}>{phone}</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {website ? (
+              <TouchableOpacity style={ds.row} onPress={() => Linking.openURL(website)}>
+                <Text style={ds.rowIcon}>🌐</Text>
+                <Text style={[ds.rowText, ds.link]} numberOfLines={1}>{website}</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={ds.divider} />
+
+            {/* Share button */}
+            <TouchableOpacity
+              style={ds.shareBtn}
+              onPress={async () => {
+                try {
+                  const msg = `Check out ${place.name}!\n📍 ${address || place.address}\n⭐ ${place.rating || 'N/A'}${place.location?.lat ? `\n📌 https://www.google.com/maps/search/?api=1&query=${place.location.lat},${place.location.lng}` : ''}`;
+                  await Share.share({ message: msg, title: place.name });
+                } catch (e) { console.log('Share error:', e.message); }
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={ds.shareBtnText}>🔗 Share this Place</Text>
+            </TouchableOpacity>
+
+            {place.location?.lat ? (
+              <TouchableOpacity style={ds.mapsBtn} onPress={() =>
+                Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${place.location.lat},${place.location.lng}&query_place_id=${place.id}`)
+              } activeOpacity={0.85}>
+                <Text style={ds.mapsBtnText}>🗺️ Open in Maps</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity style={ds.closeBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={ds.closeBtnText}>← Back to Saved</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const ds = StyleSheet.create({
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet:        { backgroundColor: colors.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', overflow: 'hidden' },
+  handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginTop: 12 },
+  photoScroll:  { height: 220 },
+  photo:        { height: 220 },
+  photoPlaceholder: { height: 120, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
+  photoIcon:    { fontSize: 40 },
+  body:         { padding: 20 },
+  name:         { fontFamily: fonts.display, fontSize: 24, color: colors.charcoal, marginBottom: 4 },
+  category:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 10 },
+  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  rating:       { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal },
+  reviews:      { fontFamily: fonts.body, fontSize: 13, color: colors.gray2 },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  rowIcon:      { fontSize: 16, width: 22 },
+  rowText:      { fontFamily: fonts.body, fontSize: 14, color: colors.gray, flex: 1, lineHeight: 20 },
+  link:         { color: colors.rose },
+  divider:      { height: 1, backgroundColor: colors.gray4, marginVertical: 16 },
+  shareBtn:     { backgroundColor: '#1A0F30', borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: 'rgba(212,149,111,0.3)' },
+  shareBtnText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gold },
+  mapsBtn:      { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
+  mapsBtnText:  { fontFamily: fonts.bodyMedium, fontSize: 15, color: '#F2EDE8' },
+  closeBtn:     { borderRadius: 999, paddingVertical: 14, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray4 },
+  closeBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gray2 },
+});
+
 export default function SavedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { savedPlans, deletePlan, toggleFavorite, updatePlanMeta } = usePlan();
+  const { savedPlans, deletePlan, toggleFavorite, updatePlanMeta, updatePlan } = usePlan();
 
-  const [noteTarget,   setNoteTarget]   = useState(null);
-  const [momentTarget, setMomentTarget] = useState(null);
+  const [noteTarget,     setNoteTarget]     = useState(null);
+  const [momentTarget,   setMomentTarget]   = useState(null);
+  const [selectedPlace,  setSelectedPlace]  = useState(null);
+  const [showPlaceDetail, setShowPlaceDetail] = useState(false);
 
   // Split into upcoming / past
   const upcoming = savedPlans.filter((p) => !isPast(p));
@@ -368,7 +532,34 @@ export default function SavedScreen() {
                   <UpcomingCard
                     key={p.id}
                     plan={p}
-                    onOpen={() => router.push('/plan/cart')}
+                    onOpen={() => {
+                      if (p.placeData) {
+                        // Single-place save (from results screen) → show detail sheet
+                        setSelectedPlace(p.placeData);
+                        setShowPlaceDetail(true);
+                      } else if (p.activity || p.food) {
+                        // Full plan save (from cart/surprise) → restore & go to cart
+                        updatePlan({
+                          activity:  p.activity  || null,
+                          food:      p.food      || null,
+                          addonType: p.addonType || null,
+                          addonItem: p.addonItem || null,
+                          city:      p.city      || '',
+                          vibe:      p.vibe      || null,
+                          group:     p.group     || null,
+                          moment:    p.moment    || null,
+                          category:  p.category  || null,
+                          coords:    p.coords    || null,
+                          date:      p.date      || '',
+                          dateDisplay: p.dateDisplay || '',
+                        });
+                        // Small delay to let state update before navigating
+                        setTimeout(() => router.push('/plan/cart'), 50);
+                      } else {
+                        // Legacy save with no place data — just go to cart
+                        router.push('/plan/cart');
+                      }
+                    }}
                     onCalendar={() => openCalendar(p)}
                     onDelete={() => confirmDelete(p.id)}
                     onFavorite={() => toggleFavorite(p.id)}
@@ -417,6 +608,13 @@ export default function SavedScreen() {
         onSave={(favoriteMoment) => updatePlanMeta(momentTarget.id, { favoriteMoment })}
         onClose={() => setMomentTarget(null)}
       />
+
+      {/* ── Saved Place Detail Sheet ── */}
+      <SavedPlaceDetailSheet
+        place={selectedPlace}
+        visible={showPlaceDetail}
+        onClose={() => { setShowPlaceDetail(false); setSelectedPlace(null); }}
+      />
     </SafeAreaView>
   );
 }
@@ -451,7 +649,7 @@ const styles = StyleSheet.create({
   vibeBadgeText: { fontFamily: fonts.bodySemiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   cardBody:      { padding: 16, paddingTop: 12, gap: 5 },
   cardItem:      { fontFamily: fonts.body, fontSize: 13, color: colors.gray },
-  cardFooter:    { flexDirection: 'row', gap: 8, padding: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.gray4, alignItems: 'center' },
+  cardFooter:    { flexDirection: 'row', gap: 8, padding: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.gray4, alignItems: 'center', justifyContent: 'space-between' },
   // Primary Open button
   openBtn:       { flex: 1, backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
   openBtnText:   { fontFamily: fonts.bodyMedium, fontSize: 14, color: '#F2EDE8' },

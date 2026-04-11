@@ -41,7 +41,7 @@ export function PlanProvider({ children }) {
     category: null,    // 'food' | 'drinks' | 'coffee' | 'activity'
   });
 
-  const [savedPlans, setSavedPlans] = useState(SAMPLE_SAVED_PLANS);
+  const [savedPlans, setSavedPlans] = useState([]); // start empty — no static sample plans
 
   const updatePlan = (updates) => setPlan((prev) => ({ ...prev, ...updates }));
 
@@ -100,17 +100,25 @@ export function PlanProvider({ children }) {
     const newPlan = {
       id:          `sp_${Date.now()}`,
       title:       titles[plan.vibe] || 'A Night to Remember 🌟💕',
-      date:        plan.date        || '',    // ✅ raw ISO date for past/upcoming split
+      date:        plan.date        || '',
       dateDisplay: plan.dateDisplay || 'Upcoming',
       city:        plan.city,
       vibe:        plan.vibe   || 'Custom',
       budget:      plan.budget || '$$',
       items,
       favorite:    false,
-      // ── Memory fields (filled in by user after the date) ──
-      note:            '',    // user's written memory
-      rating:          0,     // 1–5 stars
-      favoriteMoment:  '',    // one of plan.items the user picks
+      note:        '',
+      rating:      0,
+      favoriteMoment: '',
+      // ── Full place objects so Open restores correctly ──────
+      activity:  plan.activity  || null,
+      food:      plan.food      || null,
+      addonItem: plan.addonItem || null,
+      addonType: plan.addonType || null,
+      group:     plan.group     || null,
+      moment:    plan.moment    || null,
+      category:  plan.category  || null,
+      coords:    plan.coords    || null,
     };
 
     setSavedPlans((prev) => [newPlan, ...prev]);

@@ -21,7 +21,7 @@ export default function HomeScreen() {
       start={{ x: 0.3, y: 0 }}
       end={{ x: 0.7, y: 1 }}
     >
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.body}>
 
           {/* Pill badge */}
@@ -58,7 +58,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Stats row */}
-        <View style={[styles.stats, { paddingBottom: Math.max(insets.bottom + 24, 48) }]}>
+        <View style={[styles.stats, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}>
           {[
             { n: '4.9★', l: 'Rating' },
             { n: '18k+', l: 'Dates Planned' },
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
 
   // Stats
-  stats: { flexDirection: 'row', paddingHorizontal: 32, gap: 32 },
+  stats: { flexDirection: 'row', paddingHorizontal: 32, gap: 32, paddingBottom: 0 },
   stat:  {},
   statNum: {
     fontFamily: fonts.display,

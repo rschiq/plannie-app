@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Image, ActivityIndicator, Linking, Modal, Dimensions, Alert,
+  TextInput, KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getNearbyPlaces } from '../../services/nearbyPlacesService';
+import { getNearbyPlaces, getExpandedPlaces, isInArea, calcDistance } from '../../services/nearbyPlacesService';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
@@ -288,8 +289,13 @@ export default function ResultsScreen() {
   const [selected,   setSelected]   = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [savedIds,   setSavedIds]   = useState(new Set());
-  const [expanded,   setExpanded]   = useState(false);  // tracks if user expanded search
-  const [expandLoading, setExpandLoading] = useState(false); // track saved place IDs
+  const [expanded,      setExpanded]      = useState(false);
+  const [expandLoading, setExpandLoading] = useState(false);
+  const [showSearch,    setShowSearch]    = useState(false);  // manual search modal
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchSelected, setSearchSelected] = useState(null);
 
   const category = plan.category || 'food';
   const label    = CATEGORY_LABELS[category] || 'Places';
@@ -330,7 +336,7 @@ export default function ResultsScreen() {
         areaName,
       });
 
-      setPlaces(results);
+      setPlaces(results.slice(0, 20));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
@@ -348,6 +354,7 @@ export default function ResultsScreen() {
   async function expandSearch() {
     setExpandLoading(true);
     try {
+      // Use stored coords (works for ANY city worldwide — not just Studio City)
       let lat, lng;
       if (plan.coords?.lat && plan.coords?.lng) {
         lat = plan.coords.lat;
@@ -362,22 +369,129 @@ export default function ResultsScreen() {
         lng = data.results[0].geometry.location.lng;
       }
 
-      // Wider radius, no strict area filter
-      const results = await getNearbyPlaces({
+      // Pass existing place IDs so we don't get duplicates
+      const existingIds = places.map(p => p.id);
+
+      // Fetch ADDITIONAL results from wider area and APPEND to existing list
+      const moreResults = await getExpandedPlaces({
         lat,
         lng,
-        category: plan.category || 'food',
-        moment:   plan.moment   || 'casual_hangout',
-        areaName: '', // empty = no area filter, show everything nearby
-        expandedRadius: true,
+        category:    plan.category || 'food',
+        moment:      plan.moment   || 'casual_hangout',
+        areaName:    (plan.city || '').split(',')[0].trim(),
+        existingIds,
       });
 
-      setPlaces(results);
+      // Append new results BELOW existing ones — local results stay at top
+      setPlaces(prev => [...prev, ...moreResults]);
       setExpanded(true);
     } catch (e) {
       console.log('[Results] expand error:', e.message);
     }
     setExpandLoading(false);
+  }
+
+
+  // ── Manual search for specific place ─────────────────────────
+  async function runManualSearch() {
+    if (!searchQuery.trim()) return;
+    setSearchLoading(true);
+    setSearchResults([]);
+    try {
+      let lat, lng;
+      if (plan.coords?.lat && plan.coords?.lng) {
+        lat = plan.coords.lat;
+        lng = plan.coords.lng;
+      } else {
+        const city = plan.city || '';
+        const res  = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
+        );
+        const data = await res.json();
+        lat = data.results[0].geometry.location.lat;
+        lng = data.results[0].geometry.location.lng;
+      }
+
+      const areaName = (plan.city || '').split(',')[0].trim();
+
+      // Search 1: tight local radius (5km) with user query
+      const params1 = new URLSearchParams({
+        location: `${lat},${lng}`,
+        radius: '5000',
+        keyword: searchQuery.trim(),
+        key: GOOGLE_API_KEY,
+      });
+      const res1  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params1}`);
+      const data1 = await res1.json();
+      let raw = data1.results || [];
+
+      // Search 2: if not enough, expand to 15km
+      if (raw.length < 5) {
+        const params2 = new URLSearchParams({
+          location: `${lat},${lng}`,
+          radius: '15000',
+          keyword: searchQuery.trim(),
+          key: GOOGLE_API_KEY,
+        });
+        const res2  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params2}`);
+        const data2 = await res2.json();
+        const extra = data2.results || [];
+        const existingIds = new Set(raw.map(p => p.place_id));
+        for (const p of extra) {
+          if (!existingIds.has(p.place_id)) raw.push(p);
+        }
+      }
+
+      // Map and sort — local area first
+      const existingPlaceIds = new Set(places.map(p => p.id));
+      const mapped = raw
+        .filter(p => (p.rating ?? 0) >= 3.5)
+        .map(p => {
+          const dist = calcDistance({ lat, lng }, p.geometry?.location);
+          return {
+            id:           p.place_id,
+            name:         p.name,
+            rating:       p.rating ? parseFloat(p.rating).toFixed(1) : null,
+            totalRatings: p.user_ratings_total || 0,
+            address:      p.vicinity || '',
+            distance:     dist.toFixed(1),
+            inArea:       isInArea(p, areaName),
+            isExpanded:   !isInArea(p, areaName),
+            alreadyInList: existingPlaceIds.has(p.place_id),
+            types:        p.types || [],
+            photoUrl:     p.photos?.[0]?.photo_reference
+              ? buildPhotoUrl(p.photos[0].photo_reference)
+              : null,
+            location: { lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng },
+          };
+        })
+        // Local results first
+        .sort((a, b) => {
+          if (a.inArea !== b.inArea) return a.inArea ? -1 : 1;
+          return parseFloat(a.distance) - parseFloat(b.distance);
+        });
+
+      setSearchResults(mapped.slice(0, 15));
+    } catch (e) {
+      console.log('[ManualSearch] error:', e.message);
+    }
+    setSearchLoading(false);
+  }
+
+  function addSearchedPlace(place) {
+    if (place.alreadyInList) {
+      Alert.alert('Already in list', `${place.name} is already in your results.`);
+      return;
+    }
+    // Add to top of existing results without replacing them
+    setPlaces(prev => {
+      const filtered = prev.filter(p => p.id !== place.id);
+      return [{ ...place, _manualAdd: true }, ...filtered];
+    });
+    setShowSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    Alert.alert('Added! ✓', `${place.name} has been added to your results.`);
   }
 
   function handleSave(place) {
@@ -432,11 +546,24 @@ export default function ResultsScreen() {
           >
             <Text style={s.count}>{places.length} places found · tap for details</Text>
 
-            {/* ── Low results banner ── */}
-            {!expanded && places.length < 5 && places.length > 0 && (
+            {/* ── Place cards ── */}
+            {places.map(p => (
+              <View key={p.id}>
+                {/* Label when expanded results start */}
+                {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
+                  <View style={s.expandedLabel}>
+                    <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
+                  </View>
+                )}
+                <PlaceCard place={p} onPress={() => openDetail(p)} />
+              </View>
+            ))}
+
+            {/* ── Expand button at BOTTOM of list ── */}
+            {!expanded && places.length > 0 && (
               <View style={s.expandBanner}>
                 <Text style={s.expandBannerText}>
-                  Not many options in this area. Want to explore nearby places?
+                  Want to see more options from nearby areas?
                 </Text>
                 <TouchableOpacity
                   style={s.expandBtn}
@@ -452,15 +579,18 @@ export default function ResultsScreen() {
               </View>
             )}
 
-            {/* Expanded label */}
             {expanded && (
-              <View style={s.expandedLabel}>
-                <Text style={s.expandedLabelText}>📍 Showing nearby areas</Text>
+              <View style={[s.expandedLabel, { marginTop: 8 }]}>
+                <Text style={s.expandedLabelText}>✓ Showing results from nearby areas</Text>
               </View>
             )}
-            {places.map(p => (
-              <PlaceCard key={p.id} place={p} onPress={() => openDetail(p)} />
-            ))}
+
+            {/* ── Manual search button ── */}
+            <TouchableOpacity style={s.manualSearchBtn} onPress={() => setShowSearch(true)} activeOpacity={0.85}>
+              <Text style={s.manualSearchBtnText}>🔎 Search for a specific place</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 20 }} />
           </ScrollView>
         )}
       </SafeAreaView>
@@ -476,6 +606,95 @@ export default function ResultsScreen() {
         onSave={() => handleSave(selected)}
         isSaved={selected ? savedIds.has(selected.id) : false}
       />
+
+      {/* ── Manual Search Modal ── */}
+      <Modal
+        visible={showSearch}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowSearch(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={s.searchOverlay}
+        >
+          <View style={s.searchSheet}>
+            <View style={s.searchHandle} />
+            <Text style={s.searchTitle}>Search for a Place</Text>
+            <Text style={s.searchSub}>
+              Search near {(plan.city || '').split(',')[0] || 'your location'}
+            </Text>
+
+            {/* Search input */}
+            <View style={s.searchInputRow}>
+              <TextInput
+                style={s.searchInput}
+                placeholder="e.g. skating rink, hot pot, karaoke..."
+                placeholderTextColor={colors.gray3}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={runManualSearch}
+                returnKeyType="search"
+                autoFocus
+              />
+              <TouchableOpacity
+                style={s.searchGoBtn}
+                onPress={runManualSearch}
+                activeOpacity={0.85}
+                disabled={searchLoading || !searchQuery.trim()}
+              >
+                {searchLoading
+                  ? <ActivityIndicator size="small" color="#F2EDE8" />
+                  : <Text style={s.searchGoBtnText}>Go</Text>
+                }
+              </TouchableOpacity>
+            </View>
+
+            {/* Search results */}
+            <ScrollView style={s.searchResults} showsVerticalScrollIndicator={false}>
+              {searchResults.length === 0 && !searchLoading && searchQuery.length > 0 && (
+                <Text style={s.searchEmpty}>No results. Try a different search term.</Text>
+              )}
+              {searchResults.map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[s.searchResultCard, p.alreadyInList && s.searchResultDim]}
+                  onPress={() => addSearchedPlace(p)}
+                  activeOpacity={0.85}
+                >
+                  {p.photoUrl ? (
+                    <Image source={{ uri: p.photoUrl }} style={s.searchResultPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[s.searchResultPhoto, s.searchResultPhotoEmpty]}>
+                      <Text style={{ fontSize: 20 }}>📍</Text>
+                    </View>
+                  )}
+                  <View style={s.searchResultInfo}>
+                    <Text style={s.searchResultName} numberOfLines={1}>{p.name}</Text>
+                    <Text style={s.searchResultAddr} numberOfLines={1}>{p.address}</Text>
+                    <View style={s.searchResultMeta}>
+                      {p.rating && <Text style={s.searchResultRating}>⭐ {p.rating}</Text>}
+                      <Text style={s.searchResultDist}>🚗 {p.distance} mi</Text>
+                      {!p.inArea && <Text style={s.searchResultNearby}>· Nearby</Text>}
+                      {p.alreadyInList && <Text style={s.searchResultExists}>· Already listed</Text>}
+                    </View>
+                  </View>
+                  {!p.alreadyInList && (
+                    <View style={s.searchAddBtn}>
+                      <Text style={s.searchAddBtnText}>+ Add</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+
+            <TouchableOpacity style={s.searchCancelBtn} onPress={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }}>
+              <Text style={s.searchCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -539,4 +758,49 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: colors.gold,
   },
+
+  // ── Manual search button ─────────────────────────────────────
+  manualSearchBtn: {
+    borderRadius: 999,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.gray3,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  manualSearchBtnText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.gray,
+  },
+
+  // ── Manual search modal ──────────────────────────────────────
+  searchOverlay:       { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  searchSheet:         { backgroundColor: colors.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', paddingBottom: 24 },
+  searchHandle:        { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginTop: 12, marginBottom: 16 },
+  searchTitle:         { fontFamily: fonts.display, fontSize: 22, color: colors.charcoal, paddingHorizontal: 20, marginBottom: 4 },
+  searchSub:           { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, paddingHorizontal: 20, marginBottom: 16 },
+  searchInputRow:      { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
+  searchInput:         { flex: 1, backgroundColor: colors.cream2, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontFamily: fonts.body, fontSize: 14, color: colors.charcoal, borderWidth: 1, borderColor: colors.gray4 },
+  searchGoBtn:         { backgroundColor: colors.rose, borderRadius: 12, paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center', minWidth: 56 },
+  searchGoBtnText:     { fontFamily: fonts.bodyMedium, fontSize: 15, color: '#F2EDE8' },
+  searchResults:       { paddingHorizontal: 20, maxHeight: 400 },
+  searchEmpty:         { fontFamily: fonts.body, fontSize: 14, color: colors.gray2, textAlign: 'center', paddingVertical: 30 },
+  searchResultCard:    { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cream2, borderRadius: 12, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4 },
+  searchResultDim:     { opacity: 0.6 },
+  searchResultPhoto:   { width: 64, height: 64 },
+  searchResultPhotoEmpty: { backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
+  searchResultInfo:    { flex: 1, padding: 10 },
+  searchResultName:    { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal, marginBottom: 2 },
+  searchResultAddr:    { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 4 },
+  searchResultMeta:    { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  searchResultRating:  { fontFamily: fonts.body, fontSize: 12, color: colors.charcoal },
+  searchResultDist:    { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  searchResultNearby:  { fontFamily: fonts.body, fontSize: 12, color: colors.gold },
+  searchResultExists:  { fontFamily: fonts.body, fontSize: 12, color: colors.rose },
+  searchAddBtn:        { backgroundColor: colors.rose, paddingHorizontal: 12, paddingVertical: 8, marginRight: 10, borderRadius: 8 },
+  searchAddBtnText:    { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#F2EDE8' },
+  searchCancelBtn:     { marginHorizontal: 20, marginTop: 8, borderRadius: 999, paddingVertical: 14, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray4 },
+  searchCancelText:    { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gray2 },
 });
