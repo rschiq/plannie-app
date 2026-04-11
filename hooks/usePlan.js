@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { SAMPLE_SAVED_PLANS, PLAN_DATA } from '../data';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PlanContext = createContext(null);
 
@@ -41,7 +42,20 @@ export function PlanProvider({ children }) {
     category: null,    // 'food' | 'drinks' | 'coffee' | 'activity'
   });
 
-  const [savedPlans, setSavedPlans] = useState([]); // start empty — no static sample plans
+  const [savedPlans, setSavedPlans] = useState([]);
+
+  // ── Load saved plans from AsyncStorage on mount ───────────────
+  useEffect(() => {
+    AsyncStorage.getItem('@plannie_saved_plans')
+      .then(data => { if (data) setSavedPlans(JSON.parse(data)); })
+      .catch(() => {});
+  }, []);
+
+  // ── Persist saved plans to AsyncStorage on every change ───────
+  useEffect(() => {
+    AsyncStorage.setItem('@plannie_saved_plans', JSON.stringify(savedPlans))
+      .catch(() => {});
+  }, [savedPlans]);
 
   const updatePlan = (updates) => setPlan((prev) => ({ ...prev, ...updates }));
 

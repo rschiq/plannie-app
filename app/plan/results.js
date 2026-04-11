@@ -483,15 +483,27 @@ export default function ResultsScreen() {
       Alert.alert('Already in list', `${place.name} is already in your results.`);
       return;
     }
-    // Add to top of existing results without replacing them
+
+    // Save directly to Saved tab
+    saveSinglePlace(place, {
+      group:    plan.group,
+      moment:   plan.moment,
+      category: plan.category,
+      city:     plan.city,
+    });
+    setSavedIds(prev => new Set([...prev, place.id]));
+
+    // Also add to top of current results list
     setPlaces(prev => {
       const filtered = prev.filter(p => p.id !== place.id);
       return [{ ...place, _manualAdd: true }, ...filtered];
     });
+
     setShowSearch(false);
     setSearchQuery('');
     setSearchResults([]);
-    Alert.alert('Added! ✓', `${place.name} has been added to your results.`);
+
+    Alert.alert('Saved! 🔖', `${place.name} has been saved. Check your Saved tab to view and share it.`);
   }
 
   function handleSave(place) {
