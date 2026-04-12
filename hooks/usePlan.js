@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SAMPLE_SAVED_PLANS, PLAN_DATA } from '../data';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

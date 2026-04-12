@@ -19,7 +19,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A0F30"
+        "backgroundColor": "#100D1A"
       },
       "package": "com.plannie.app",
       "googleServicesFile": "./google-services.json",
