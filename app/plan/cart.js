@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ACTIVITIES, RESTAURANTS, ADDONS } from '../../data';
-import { getPlacesByVibe, getPlacesNearby, getCurationLabel } from '../../services/placesService';
+import { getPlacesByCategory, getPlacesNearby, getCurationLabel } from '../../services/placesService';
 
 // ─── Item Action Sheet ───────────────────────────────────────
 function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
@@ -393,19 +393,30 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
     try {
       // ✅ Use stored coords first — more accurate than geocoding city string
       let lat, lng;
-      if (plan.coords?.lat && plan.coords?.lng) {
-        lat = plan.coords.lat;
-        lng = plan.coords.lng;
-      } else {
-        const city    = plan.city || 'Los Angeles';
-        const geoUrl  = 'https://maps.googleapis.com/maps/api/geocode/json?' +
-          'address=' + encodeURIComponent(city) + '&key=' + GOOGLE_API_KEY;
-        const geoRes  = await fetch(geoUrl);
-        const geoData = await geoRes.json();
-        if (geoData.status !== 'OK') throw new Error('Geocode failed: ' + geoData.status);
-        lat = geoData.results[0].geometry.location.lat;
-        lng = geoData.results[0].geometry.location.lng;
-      }
+
+if (plan.coords?.lat && plan.coords?.lng) {
+  lat = plan.coords.lat;
+  lng = plan.coords.lng;
+
+} else if (plan.city) {
+
+  const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
+    'address=' + encodeURIComponent(plan.city) +
+    '&key=' + GOOGLE_API_KEY;
+
+  const geoRes = await fetch(geoUrl);
+  const geoData = await geoRes.json();
+
+  if (geoData.status !== 'OK') {
+    throw new Error('Geocode failed: ' + geoData.status);
+  }
+
+  lat = geoData.results[0].geometry.location.lat;
+  lng = geoData.results[0].geometry.location.lng;
+
+} else {
+  throw new Error('No location provided');
+}
 
       // ── ADDON SWAP ────────────────────────────────────────────
       if (swapKey === 'addon') {
@@ -527,9 +538,10 @@ function SwapSheet({ visible, swapKey, plan, onClose, onSwap }) {
       let finalList = [];
 
       // ── PASS 1: tight radius around selected area (5km) ──
-      const pass1 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
-        radius: 5000, maxResults: 15, selectedArea,
-      });
+      const pass1 = await getPlacesByCategory('activity', { lat, lng }, {
+  maxResults: 12,
+  selectedArea: plan.city || ''
+});
       finalList = qualityFilter(excludeCurrent(pass1));
 
       // ── PASS 2: medium radius (12km) if not enough ──
@@ -1122,7 +1134,7 @@ export default function CartScreen() {
 
   function handleCalendar() {
     const title = encodeURIComponent(plan.vibe ? `${plan.vibe} Date Night` : 'Plannie Date Night');
-    const loc   = encodeURIComponent(plan.city || 'Los Angeles, CA');
+    const loc = encodeURIComponent(plan.city || '');
     const url   = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${encodeURIComponent('Planned with Plannie 💕')}`;
     Linking.openURL(url).catch(() => Alert.alert('Could not open Calendar'));
   }

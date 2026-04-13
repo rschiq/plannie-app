@@ -21,7 +21,7 @@ export default function HomeScreen() {
       start={{ x: 0.3, y: 0 }}
       end={{ x: 0.7, y: 1 }}
     >
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]} edges={[]}>
         <View style={styles.body}>
 
           {/* Pill badge */}

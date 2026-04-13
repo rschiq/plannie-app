@@ -1,54 +1,91 @@
 import { Tabs } from 'expo-router';
-import { Text, View } from 'react-native';
+import { Text, View, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../constants/theme';
 
 function TabIcon({ emoji, label, focused }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 8, width: 70 }}>
+    <View
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 70,
+      }}
+    >
       <Text style={{ fontSize: 22 }}>{emoji}</Text>
-      <Text style={{
-        fontSize: 10,
-        fontFamily: fonts.bodyMedium,
-        color: focused ? colors.rose : colors.gray3,
-        marginTop: 3,
-        textAlign: 'center',
-      }}>{label}</Text>
+      <Text
+        style={{
+          fontSize: 10,
+          fontFamily: fonts.bodyMedium,
+          color: focused ? colors.rose : colors.gray3,
+          marginTop: 3,
+          textAlign: 'center',
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
+  // Android needs a little extra breathing room on some devices
+  const androidExtraBottom = Platform.OS === 'android' ? 10 : 0;
+  const bottomSpace = insets.bottom + androidExtraBottom;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: false,
+        tabBarItemStyle: {
+          paddingVertical: 0,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.cream2,
           borderTopWidth: 1,
-          height: 80,
-          paddingBottom: 14,
-          paddingTop: 4,
+          height: 68 + bottomSpace,
+          paddingTop: 8,
+          paddingBottom: bottomSpace,
         },
-        tabBarShowLabel: false,
-        tabBarItemStyle: { paddingVertical: 0 },
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" label="Home" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🏠" label="Home" focused={focused} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="plan"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="💫" label="Plan" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="💫" label="Plan" focused={focused} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="saved"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🗂️" label="Saved" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🗂️" label="Saved" focused={focused} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="👤" label="Profile" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="👤" label="Profile" focused={focused} />
+          ),
+        }}
       />
     </Tabs>
   );

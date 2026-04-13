@@ -35,7 +35,6 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-          <Stack.Screen name="(tabs)/plan" />
           <Stack.Screen name="plan/details" />
           <Stack.Screen name="plan/how" />
           <Stack.Screen name="plan/vibe" />

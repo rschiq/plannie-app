@@ -63,7 +63,7 @@ export default function ProfileScreen() {
   const comingSoon = () => router.push('/pro');
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]} edges={[]}>
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 40) }}>
 
         {/* ── Hero — Midnight Velvet ── */}
@@ -139,7 +139,7 @@ export default function ProfileScreen() {
             sub="One tap, full plan"
             badge="PRO"
             isPremium={isPremium}
-            onPress={() => isPremium ? router.push('/plan/how?surprise=true') : router.push('/pro')}
+            onPress={() => isPremium ? router.push('/plan/surprise') : router.push('/pro')}
           />
           <ProfileRow
             icon="❤️"
