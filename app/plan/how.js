@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar } from '../../components/UI';
-import { getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel } from '../../services/placesService';
+import { getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel } from '../../services/placesService';
 
 const VIBES = ['Adventure', 'Chill', 'Romantic', 'Fun'];
 const CARD_HEIGHT = 200;
@@ -197,11 +197,10 @@ export default function HowScreen() {
 
   async function doSurprise() {
     const vibe = VIBES[Math.floor(Math.random() * VIBES.length)];
-    const vibeMap = { Adventure: 'adventure', Chill: 'chill', Romantic: 'romantic', Fun: 'fun' };
     setShowLoader(true);
 
     try {
-      const city = plan.city || 'Los Angeles, CA';
+      const city = plan.city || '';
       const geoUrl = 'https://maps.googleapis.com/maps/api/geocode/json?' +
         'address=' + encodeURIComponent(city) + '&key=AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
       const geoRes  = await fetch(geoUrl);
@@ -209,13 +208,18 @@ export default function HowScreen() {
 
       if (geoData.status === 'OK') {
         const { lat, lng } = geoData.results[0].geometry.location;
-        const vibeKey = vibeMap[vibe] || 'chill';
 
-        let activityPlaces = await getPlacesByVibe(vibeKey, { lat, lng }, { radius: 8000, maxResults: 6 });
+        let activityPlaces = await getPlacesByCategory('activity', { lat, lng }, {
+          radius: 8000, maxResults: 6, budget: plan.budget,
+        });
         if (activityPlaces.length === 0) {
-          activityPlaces = await getPlacesByVibe('chill', { lat, lng }, { radius: 8000, maxResults: 6 });
+          activityPlaces = await getPlacesByCategory('activity', { lat, lng }, {
+            radius: 20000, maxResults: 6, budget: plan.budget,
+          });
         }
-        const foodPlaces = await getPlacesByVibe('foodie', { lat, lng }, { radius: 5000, maxResults: 6 });
+        const foodPlaces = await getPlacesByCategory('food', { lat, lng }, {
+          radius: 5000, maxResults: 6, budget: plan.budget,
+        });
 
         function calcDist(from, to) {
           if (!to) return null;
@@ -229,7 +233,7 @@ export default function HowScreen() {
           return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
         }
 
-        function mapPlace(p, typeOverride) {
+        function mapPlace(p, typeOverride, curationCategory) {
           const category = typeOverride || getReadableType(p.types || []);
           const dist = calcDist({ lat, lng }, p.location);
           const shortLoc = p.shortLocation || shortenVicinity(p.address) || '';
@@ -254,14 +258,14 @@ export default function HowScreen() {
             tag:           (p.rating ?? 0) >= 4.8 ? 'Top rated'
                          : (p.totalRatings ?? 0) > 1000 ? 'Popular'
                          : p.isOpenNow ? 'Open now' : 'Nearby',
-            curationLabel: getCurationLabel({ ...p, distance: dist }, vibe.toLowerCase()),
+            curationLabel: getCurationLabel({ ...p, distance: dist }, curationCategory),
           };
         }
 
         const activity = activityPlaces.length > 0
-          ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)]) : null;
+          ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)], null, 'activity') : null;
         const food = foodPlaces.length > 0
-          ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant') : null;
+          ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant', 'food') : null;
 
         const addonTypes = ['flowers', 'dessert', 'scenic'];
         const addonType  = addonTypes[Math.floor(Math.random() * addonTypes.length)];

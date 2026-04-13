@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getPlacesByVibe } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton, SectionLabel, Divider } from '../../components/UI';
 import { AddonCard } from '../../components/ItemCard';
 import { SelectableCard } from '../../components/SelectableCard';

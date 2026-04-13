@@ -10,7 +10,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getNearbyPlaces, getExpandedPlaces, isInArea, calcDistance } from '../../services/nearbyPlacesService';
+import { isInArea, calcDistance } from '../../services/nearbyPlacesService';
+import { getPlacesByCategory } from '../../services/placesService';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
@@ -314,12 +315,12 @@ export default function ResultsScreen() {
         lat = plan.coords.lat;
         lng = plan.coords.lng;
       } else {
-        const city = plan.city || 'Los Angeles, CA';
+        const city = plan.city || '';
         const res  = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
         );
         const data = await res.json();
-        if (data.status !== 'OK') throw new Error('Could not find location: ' + city);
+        if (data.status !== 'OK') throw new Error('Could not find location: ' + (city || '(empty)'));
         lat = data.results[0].geometry.location.lat;
         lng = data.results[0].geometry.location.lng;
       }
@@ -327,16 +328,33 @@ export default function ResultsScreen() {
       // Extract clean area name from city string (e.g. "Studio City, CA" → "Studio City")
       const areaName = (plan.city || '').split(',')[0].trim();
 
-      // Call the service — handles nearby search, scoring, variety, area-first
-      const results = await getNearbyPlaces({
-        lat,
-        lng,
-        category: plan.category || 'food',
-        moment:   plan.moment   || 'casual_hangout',
-        areaName,
+      const cat = plan.category || 'food';
+      const raw = await getPlacesByCategory(cat, { lat, lng }, {
+        radius: 8000,
+        maxResults: 24,
+        selectedArea: areaName,
+        budget: plan.budget,
       });
 
-      setPlaces(results.slice(0, 20));
+      const mapped = raw.map((p) => {
+        const dist = p.distanceMiles ?? calcDistance({ lat, lng }, p.location);
+        const placeForArea = { vicinity: p.address, formatted_address: p.address };
+        return {
+          id:           p.id,
+          name:         p.name,
+          rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
+          totalRatings: p.totalRatings || 0,
+          address:      p.address || '',
+          distance:     dist.toFixed(1),
+          inArea:       isInArea(placeForArea, areaName),
+          isExpanded:   !isInArea(placeForArea, areaName),
+          types:        p.types || [],
+          photoUrl:     p.photoUrl,
+          location:     p.location,
+        };
+      });
+
+      setPlaces(mapped.slice(0, 20));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
@@ -360,7 +378,7 @@ export default function ResultsScreen() {
         lat = plan.coords.lat;
         lng = plan.coords.lng;
       } else {
-        const city = plan.city || 'Los Angeles, CA';
+        const city = plan.city || '';
         const res  = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
         );
@@ -369,20 +387,38 @@ export default function ResultsScreen() {
         lng = data.results[0].geometry.location.lng;
       }
 
-      // Pass existing place IDs so we don't get duplicates
-      const existingIds = places.map(p => p.id);
+      const existingIds = new Set(places.map(p => p.id));
+      const areaName = (plan.city || '').split(',')[0].trim();
+      const cat = plan.category || 'food';
 
-      // Fetch ADDITIONAL results from wider area and APPEND to existing list
-      const moreResults = await getExpandedPlaces({
-        lat,
-        lng,
-        category:    plan.category || 'food',
-        moment:      plan.moment   || 'casual_hangout',
-        areaName:    (plan.city || '').split(',')[0].trim(),
-        existingIds,
+      const rawMore = await getPlacesByCategory(cat, { lat, lng }, {
+        radius: 35000,
+        maxResults: 40,
+        selectedArea: areaName,
+        budget: plan.budget,
       });
 
-      // Append new results BELOW existing ones — local results stay at top
+      const moreResults = rawMore
+        .filter(p => !existingIds.has(p.id))
+        .map((p) => {
+          const dist = p.distanceMiles ?? calcDistance({ lat, lng }, p.location);
+          const placeForArea = { vicinity: p.address, formatted_address: p.address };
+          return {
+            id:           p.id,
+            name:         p.name,
+            rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
+            totalRatings: p.totalRatings || 0,
+            address:      p.address || '',
+            distance:     dist.toFixed(1),
+            inArea:       isInArea(placeForArea, areaName),
+            isExpanded:   true,
+            types:        p.types || [],
+            photoUrl:     p.photoUrl,
+            location:     p.location,
+          };
+        })
+        .slice(0, 15);
+
       setPlaces(prev => [...prev, ...moreResults]);
       setExpanded(true);
     } catch (e) {

@@ -1,7 +1,7 @@
 // services/placesService.js
 // ─────────────────────────────────────────────────────────────
 // Google Places API — Plannie
-// Upgraded: neighborhood support, vibe filtering, multi-stop
+// Category-based search, neighborhood support, multi-stop
 // distance logic, category cleanup, curation labels
 // ─────────────────────────────────────────────────────────────
 
@@ -75,70 +75,10 @@ export function shortenVicinity(vicinity = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PART 3 — Vibe config: correct types per vibe, no irrelevant
-// ─────────────────────────────────────────────────────────────
-export const VIBE_CONFIG = {
-  chill: {
-    emoji: '☕',
-    label: 'Chill',
-    // Relaxed but premium — avoid generic cafes, prefer experiences
-    types: ['movie_theater', 'spa', 'shopping_mall', 'art_gallery', 'museum'],
-    keywords: [
-      'wine bar', 'speakeasy bar', 'rooftop lounge', 'jazz lounge',
-      'comedy club', 'bookstore cafe', 'board game cafe', 'dessert bar',
-      'craft brewery', 'tea house', 'cigar lounge',
-    ],
-    color: '#A8DADC',
-    minRating: 4.2,      // ✅ higher floor for chill — no cheap spots
-    minReviews: 50,
-  },
-  fun: {
-    emoji: '🎉',
-    label: 'Fun',
-    // Playful, loud, joyful — bowling, arcades, karaoke
-    types: ['bowling_alley', 'amusement_center', 'night_club', 'bar'],
-    keywords: [
-      'bowling alley', 'bowling bar', 'arcade bar', 'karaoke bar',
-      'billiards pool hall', 'mini golf', 'comedy club', 'dave buster',
-      'bowlero', 'lucky strike', 'punch bowl social', 'main event',
-    ],
-    color: '#FFB347',
-  },
-  romantic: {
-    emoji: '💕',
-    label: 'Romantic',
-    // Dreamy, intimate — fine dining, wine bars, rooftops, scenic views
-    types: ['restaurant', 'bar', 'art_gallery', 'museum'],
-    keywords: ['rooftop bar', 'wine bar', 'fine dining', 'romantic restaurant', 'jazz bar', 'botanical garden', 'scenic viewpoint'],
-    color: '#FF8FAB',
-  },
-  adventure: {
-    emoji: '🏕️',
-    label: 'Adventure',
-    // Active, exciting — escape rooms, climbing, go-karts, outdoor
-    types: [],
-    keywords: [
-      'escape room', 'go kart', 'axe throwing', 'rock climbing gym',
-      'vr gaming', 'trampoline park', 'paintball', 'laser tag',
-      'kayaking', 'hiking trail', 'topgolf', 'shooting range',
-    ],
-    keywordsOnly: true,
-    color: '#90BE6D',
-  },
-  foodie: {
-    emoji: '🍜',
-    label: 'Foodie',
-    types: ['restaurant', 'cafe', 'bakery'],
-    keywords: ['best restaurant', 'popular dining', 'highly rated restaurant', 'tasting menu'],
-    color: '#F4A261',
-  },
-};
-
-// ─────────────────────────────────────────────────────────────
 // PART 7 — Curation label per place
 // "We picked this because it's nearby, highly rated..."
 // ─────────────────────────────────────────────────────────────
-export function getCurationLabel(place, vibe) {
+export function getCurationLabel(place, category) {
   const reasons = [];
   if (place.rating >= 4.8)           reasons.push('top-rated');
   else if (place.rating >= 4.5)      reasons.push('highly rated');
@@ -148,16 +88,16 @@ export function getCurationLabel(place, vibe) {
 
   if (reasons.length === 0) reasons.push('nearby');
 
-  const vibeReasons = {
-    romantic:  'perfect for a romantic night',
-    chill:     'great for a relaxed evening',
-    fun:       'guaranteed to be a good time',
-    adventure: 'an exciting experience',
-    foodie:    'a great dining choice',
+  const categoryNotes = {
+    activity: 'a fun shared experience',
+    food:     'a great dining choice',
+    drinks:   'perfect for drinks together',
+    coffee:   'ideal for a relaxed coffee date',
   };
 
-  const vibeNote = vibeReasons[vibe?.toLowerCase()] || 'fits your vibe';
-  return `We picked this because it's ${reasons.slice(0, 2).join(' and ')}, and ${vibeNote}.`;
+  const key = String(category || '').toLowerCase();
+  const note = categoryNotes[key] || 'a great fit for your plan';
+  return `We picked this because it's ${reasons.slice(0, 2).join(' and ')}, and ${note}.`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -423,30 +363,97 @@ export function isCoupleFriendly(place) {
   return true;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Budget → quality / price hints (category flows only)
+// ─────────────────────────────────────────────────────────────
+function thresholdsForBudget(budget) {
+  if (budget === '$') return { minRating: 3.7, minReviews: 8 };
+  if (budget === '$$$') return { minRating: 4.2, minReviews: 35 };
+  return { minRating: 4.0, minReviews: 10 };
+}
+
+function passesCategoryRules(p, category) {
+  if (!category) return true;
+  const types = p.types || [];
+  const tset = new Set(types);
+  const nameLower = (p.name || '').toLowerCase();
+
+  if (category === 'food') {
+    return tset.has('restaurant');
+  }
+  if (category === 'drinks') {
+    return tset.has('bar') || tset.has('night_club');
+  }
+  if (category === 'coffee') {
+    return tset.has('cafe') || nameLower.includes('coffee') || nameLower.includes('tea');
+  }
+  if (category === 'activity') {
+    const types = p.types || [];
+    const name  = (p.name || '').toLowerCase();
+
+    const isRealActivity =
+      types.includes('bowling_alley') ||
+      types.includes('movie_theater') ||
+      name.includes('escape') ||
+      name.includes('kart') ||
+      name.includes('axe') ||
+      name.includes('vr') ||
+      name.includes('skate') ||
+      name.includes('billiard') ||
+      name.includes('comedy');
+
+    // Only block restaurant if NOT a real activity
+    if (types.includes('restaurant') && !isRealActivity) return false;
+
+    // Always block these
+    if (types.includes('cafe')) return false;
+    if (types.includes('bakery')) return false;
+
+    return true;
+  }
+  return true;
+}
+
+// Hard block — same rules for every category (before category allowlists)
+function applyHardBlock(places) {
+  return places.filter((p) => {
+    const types = p.types || [];
+    const name = (p.name || '').toLowerCase();
+
+    if (types.includes('park')) return false;
+    if (types.includes('tourist_attraction')) return false;
+    if (types.includes('store')) return false;
+
+    if (name.includes('park')) return false;
+    if (name.includes('trail')) return false;
+    if (name.includes('garden')) return false;
+    if (name.includes('sporting goods')) return false;
+
+    return true;
+  });
+}
+
 function filterAndSort(places, {
   minRating    = 4.0,
   minReviews   = 10,
   maxResults   = 12,
   selectedArea = '',
   allowShopping = false,
+  category       = '',
+  budget         = null,
 } = {}) {
-  // 🚫 HARD BLOCK — REMOVE PARKS & BAD RESULTS
-const blocked = places.filter(p => {
-  const types = p.types || [];
-  const name = (p.name || '').toLowerCase();
+  const b = budget != null ? thresholdsForBudget(budget) : null;
+  if (b) {
+    minRating = b.minRating;
+    minReviews = b.minReviews;
+  }
 
-  if (types.includes('park')) return false;
-  if (types.includes('tourist_attraction')) return false;
-  if (types.includes('point_of_interest')) return false;
+  const blocked = applyHardBlock(places);
+  const categoryFiltered = category
+    ? blocked.filter(p => passesCategoryRules(p, category))
+    : blocked;
 
-  if (name.includes('park')) return false;
-  if (name.includes('trail')) return false;
-  if (name.includes('garden')) return false;
-
-  return true;
-});
-  // ✅ Remove retail/store results first — they are never date activities
-  const noRetail = blocked.filter(p => !isRetailPlace(p, allowShopping));
+  const noRetail = categoryFiltered.filter(p => !isRetailPlace(p, allowShopping));
 
   // ✅ Remove cheap/fast-food/generic chains — not date-worthy
   const noCheap = noRetail.filter(p => {
@@ -457,19 +464,28 @@ const blocked = places.filter(p => {
   // ✅ Remove kids/family-focused places — Plannie is for couples
   const coupleFriendly = noCheap.filter(p => isCoupleFriendly(p));
 
-  // Fallback: relax filters progressively so we never return empty
+  // Fallback: relax downstream filters only — never bypass hard block or category rules
   const pool0 =
   coupleFriendly.length >= 5 ? coupleFriendly :
   noCheap.length >= 5        ? noCheap :
   noRetail.length >= 5       ? noRetail :
-  places;
+  categoryFiltered;
 
   // Quality filter — 3-tier fallback so we never return empty
-  const strict  = pool0.filter(p => (p.rating ?? 0) >= 4.0 && (p.totalRatings ?? 0) >= 10);
+  const strict  = pool0.filter(p => (p.rating ?? 0) >= minRating && (p.totalRatings ?? 0) >= minReviews);
   const lenient = pool0.filter(p => (p.rating ?? 0) >= minRating);
-  const pool    = strict.length >= 3 ? strict
+  let pool      = strict.length >= 3 ? strict
                 : lenient.length > 0 ? lenient
                 : pool0;
+
+  if (budget === '$$$' && ['food', 'drinks', 'coffee'].includes(category)) {
+    const upscale = pool.filter(p => (p.price_level ?? 0) >= 2);
+    if (upscale.length >= 3) pool = upscale;
+  }
+  if (budget === '$' && ['food', 'drinks', 'coffee'].includes(category)) {
+    const modest = pool.filter(p => p.price_level == null || p.price_level <= 2);
+    if (modest.length >= 3) pool = modest;
+  }
 
   // Attach score to each place
   const scored = pool.map(p => ({
@@ -485,96 +501,15 @@ const blocked = places.filter(p => {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Public: main helper — used by activity.js, food.js, etc.
-// PART 2: always uses lat/lng directly
-// PART 3: vibe-based type filtering
-// ─────────────────────────────────────────────────────────────
-export async function getPlacesByVibe(vibe, location, options = {}) {
-  const { radius = 12000, maxResults = 12, selectedArea = '' } = options;
-  const config = VIBE_CONFIG[vibe?.toLowerCase()];
-
-  if (!config) throw new Error(`Unknown vibe: "${vibe}"`);
-  if (!location?.lat || !location?.lng) throw new Error('location must have lat and lng');
-
-  const { lat, lng } = location;
-  const seen = new Set();
-  const allPlaces = [];
-
-  if (config.keywordsOnly) {
-    // ── Adventure: keyword-only, parallel fetch ──
-    const results = await Promise.allSettled(
-      config.keywords.map(keyword =>
-        fetchByKeywordOnly({ lat, lng, keyword, radius })
-      )
-    );
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue;
-      for (const raw of r.value) {
-        if (!seen.has(raw.place_id)) {
-          seen.add(raw.place_id);
-          allPlaces.push(normalize(raw));
-        }
-      }
-    }
-  } else {
-    // ── All other vibes: type + keyword ──
-    const typeResults = await Promise.allSettled(
-      config.types.map(type =>
-        fetchByType({ lat, lng, type, keyword: config.keywords[0], radius })
-      )
-    );
-    for (const r of typeResults) {
-      if (r.status !== 'fulfilled') continue;
-      for (const raw of r.value) {
-        if (!seen.has(raw.place_id)) {
-          seen.add(raw.place_id);
-          allPlaces.push(normalize(raw));
-        }
-      }
-    }
-
-    // Additional keyword passes — search all keywords independently
-    // This ensures named venues like Bowlero, Dave & Buster's are found
-    const kwResults = await Promise.allSettled(
-      config.keywords.map(keyword =>
-        fetchByKeywordOnly({ lat, lng, keyword, radius })
-      )
-    );
-    for (const r of kwResults) {
-      if (r.status !== 'fulfilled') continue;
-      for (const raw of r.value) {
-        if (!seen.has(raw.place_id)) {
-          seen.add(raw.place_id);
-          allPlaces.push(normalize(raw));
-        }
-      }
-    }
-  }
-
-  // Attach real distance before scoring so scorePlace can use it
-  const withDist = allPlaces.map(p => ({
-    ...p,
-    distanceMiles: calcDistMiles({ lat, lng }, p.location),
-  }));
-
-  // Only allow shopping results for chill vibe
-  const allowShopping = vibe?.toLowerCase() === 'chill';
-  return filterAndSort(withDist, {
-    maxResults,
-    selectedArea,
-    allowShopping,
-    minRating:  config.minRating  || 4.0,
-    minReviews: config.minReviews || 10,
-  });
-}
-
-// ─────────────────────────────────────────────────────────────
 // PART 4 — Multi-stop search: find next place near a previous one
 // Used by food.js to search near the selected activity location
 // radius 1500–2500m keeps stops geographically close
 // ─────────────────────────────────────────────────────────────
 export async function getPlacesNearby(types, nearLocation, options = {}) {
-  const { radius = 5000, maxResults = 12, keyword = '', selectedArea = '' } = options;
+  const {
+    radius = 5000, maxResults = 12, keyword = '', selectedArea = '',
+    category = 'food', budget = null,
+  } = options;
   const { lat, lng } = nearLocation;
 
   const seen = new Set();
@@ -599,7 +534,9 @@ export async function getPlacesNearby(types, nearLocation, options = {}) {
     distanceMiles: calcDistMiles({ lat, lng }, p.location),
   }));
 
-  return filterAndSort(withDist, { minRating: 3.8, minReviews: 10, maxResults, selectedArea });
+  return filterAndSort(withDist, {
+    minRating: 3.8, minReviews: 10, maxResults, selectedArea, category, budget,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -642,15 +579,17 @@ export function formatPrice(level) {
   return '$'.repeat(level + 1);
 }
 // ─────────────────────────────────────────────────────────────
-// NEW — CATEGORY-BASED SEARCH (replaces vibe system gradually)
+// CATEGORY-BASED SEARCH (keyword-driven; shared filter pipeline)
 // ─────────────────────────────────────────────────────────────
 export async function getPlacesByCategory(category, location, options = {}) {
-  const { radius = 5000, maxResults = 12, selectedArea = '' } = options;
+  console.log('USING CATEGORY SYSTEM');
+  const { radius = 5000, maxResults = 12, selectedArea = '', budget = null } = options;
+  if (!location?.lat || !location?.lng) throw new Error('location must have lat and lng');
+
   const { lat, lng } = location;
 
   let keywords = [];
 
-  // 🎯 CATEGORY RULES
   if (category === 'activity') {
     keywords = [
       'escape room',
@@ -660,65 +599,37 @@ export async function getPlacesByCategory(category, location, options = {}) {
       'axe throwing',
       'vr experience',
       'skating rink',
-      'topgolf',
       'billiards',
       'comedy club',
-      'live music',
-      'movie theater'
+      'movie theater',
     ];
-  }
-
-  if (category === 'food') {
+  } else if (category === 'food') {
     keywords = ['restaurant'];
-  }
-
-  if (category === 'drinks') {
+  } else if (category === 'drinks') {
     keywords = ['bar', 'cocktail bar', 'wine bar', 'lounge'];
+  } else if (category === 'coffee') {
+    keywords = ['cafe', 'coffee', 'tea house'];
+  } else {
+    throw new Error(`Unknown category: "${category}"`);
   }
 
-  if (category === 'coffee') {
-    keywords = ['coffee shop', 'cafe', 'tea house'];
-  }
-
-  let allPlaces = [];
   const seen = new Set();
+  const results = await Promise.allSettled(
+    keywords.map(keyword => fetchByKeywordOnly({ lat, lng, keyword, radius }))
+  );
 
-  for (const keyword of keywords) {
-    const url = `${BASE_URL}?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(keyword)}&key=${GOOGLE_API_KEY}`;
-
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (data.results) {
-      for (const raw of data.results) {
-        if (!seen.has(raw.place_id)) {
-          seen.add(raw.place_id);
-          allPlaces.push(normalize(raw));
-        }
+  const allPlaces = [];
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    for (const raw of r.value) {
+      if (!seen.has(raw.place_id)) {
+        seen.add(raw.place_id);
+        allPlaces.push(normalize(raw));
       }
     }
   }
 
-  // 🚫 HARD FILTER (fixes parks + sporting goods + garbage)
-  const cleaned = allPlaces.filter(p => {
-    const types = p.types || [];
-    const name = (p.name || '').toLowerCase();
-
-    if (types.includes('store')) return false;
-    if (types.includes('park')) return false;
-    if (types.includes('tourist_attraction')) return false;
-    if (types.includes('point_of_interest')) return false;
-
-    if (name.includes('park')) return false;
-    if (name.includes('trail')) return false;
-    if (name.includes('garden')) return false;
-    if (name.includes('sporting goods')) return false;
-    if (name.includes('supply')) return false;
-
-    return true;
-  });
-
-  const withDist = cleaned.map(p => ({
+  const withDist = allPlaces.map(p => ({
     ...p,
     distanceMiles: calcDistMiles({ lat, lng }, p.location),
   }));
@@ -726,5 +637,7 @@ export async function getPlacesByCategory(category, location, options = {}) {
   return filterAndSort(withDist, {
     maxResults,
     selectedArea,
+    category,
+    budget,
   });
 }

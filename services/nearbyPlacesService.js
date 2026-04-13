@@ -28,7 +28,7 @@ const CATEGORY_TYPES = {
   food:     ['restaurant'],
   drinks:   ['bar', 'night_club'],
   coffee:   ['cafe'],
-  activity: ['bowling_alley', 'tourist_attraction', 'night_club', 'movie_theater'],
+  activity: [],
 };
 
 const MOMENT_KEYWORDS = {
@@ -42,20 +42,20 @@ const MOMENT_KEYWORDS = {
 };
 
 const ACTIVITY_KEYWORD_SEARCHES = [
-  { keyword: 'topgolf'              },
-  { keyword: 'golf driving range'   },
-  { keyword: 'mini golf'            },
-  { keyword: 'bowling alley'        },
-  { keyword: 'billiards pool hall'  },
-  { keyword: 'ice skating rink'     },
-  { keyword: 'roller skating'       },
-  { keyword: 'karaoke bar'          },
-  { keyword: 'stand up comedy club' },
-  { keyword: 'escape room'          },
-  { keyword: 'axe throwing'         },
+  { keyword: 'escape room' },
+  { keyword: 'bowling alley' },
+  { keyword: 'mini golf' },
+  { keyword: 'go kart' },
+  { keyword: 'axe throwing' },
+  { keyword: 'vr experience' },
+  { keyword: 'skating rink' },
+  { keyword: 'billiards' },
+  { keyword: 'comedy club' },
+  { keyword: 'movie theater' },
 ];
 
 const BLOCKED = [
+  'park', 'trail', 'garden', 'national', 'state park',
   'gamestop','game stop','best buy','walmart','target','costco',
   'home depot','dollar tree','dollar general','marshalls','ross ',
   'walgreens','cvs','rite aid','dollar store','five below',
@@ -103,12 +103,16 @@ export function isInArea(place, areaName) {
 function passesQuality(place, minRating = 3.8, minReviews = 10) {
   if ((place.rating ?? 0) < minRating)             return false;
   if ((place.user_ratings_total ?? 0) < minReviews) return false;
+  if (place.types?.includes('store')) return false;
+  if (place.types?.includes('park')) return false;
+  if (place.types?.includes('tourist_attraction')) return false;
   if (isBlocked(place.name))                        return false;
   return true;
 }
 
 async function nearbySearch({ lat, lng, type, keyword, radius }) {
-  const params = new URLSearchParams({ location: `${lat},${lng}`, radius: String(radius), type, key: GOOGLE_API_KEY });
+  const params = new URLSearchParams({ location: `${lat},${lng}`, radius: String(radius), key: GOOGLE_API_KEY });
+  if (type) params.set('type', type);
   if (keyword) params.set('keyword', keyword);
   try {
     const res  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
@@ -122,6 +126,19 @@ async function batchSearch({ lat, lng, types, keyword, radius, seen }) {
   await Promise.allSettled(
     types.map(async (type) => {
       const places = await nearbySearch({ lat, lng, type, keyword, radius });
+      for (const p of places) {
+        if (!seen.has(p.place_id)) { seen.add(p.place_id); results.push(p); }
+      }
+    })
+  );
+  return results;
+}
+
+async function activityKeywordSearch({ lat, lng, radius, seen }) {
+  const results = [];
+  await Promise.allSettled(
+    ACTIVITY_KEYWORD_SEARCHES.map(async ({ keyword: kw }) => {
+      const places = await nearbySearch({ lat, lng, type: '', keyword: kw, radius });
       for (const p of places) {
         if (!seen.has(p.place_id)) { seen.add(p.place_id); results.push(p); }
       }
@@ -171,12 +188,11 @@ export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'c
   const nonLocalRaw = [];
 
   // Pass A: tight local search (3km)
-  const passA = await batchSearch({ lat, lng, types, keyword, radius: 3000, seen });
+  let passA = [];
   if (category === 'activity') {
-    await Promise.allSettled(ACTIVITY_KEYWORD_SEARCHES.map(async ({ keyword: kw }) => {
-      const places = await nearbySearch({ lat, lng, type: 'tourist_attraction', keyword: kw, radius: 5000 });
-      for (const p of places) { if (!seen.has(p.place_id)) { seen.add(p.place_id); passA.push(p); } }
-    }));
+    passA = await activityKeywordSearch({ lat, lng, radius: 5000, seen });
+  } else {
+    passA = await batchSearch({ lat, lng, types, keyword, radius: 3000, seen });
   }
   for (const p of passA) {
     if (!passesQuality(p)) continue;
@@ -186,12 +202,11 @@ export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'c
   // Pass B: expand radius if not enough local (5km → 8km → 12km)
   if (localRaw.length < TARGET_COUNT) {
     for (const radius of [5000, 8000, 12000]) {
-      const more = await batchSearch({ lat, lng, types, keyword, radius, seen });
+      let more = [];
       if (category === 'activity') {
-        await Promise.allSettled(ACTIVITY_KEYWORD_SEARCHES.map(async ({ keyword: kw }) => {
-          const places = await nearbySearch({ lat, lng, type: 'tourist_attraction', keyword: kw, radius });
-          for (const p of places) { if (!seen.has(p.place_id)) { seen.add(p.place_id); more.push(p); } }
-        }));
+        more = await activityKeywordSearch({ lat, lng, radius, seen });
+      } else {
+        more = await batchSearch({ lat, lng, types, keyword, radius, seen });
       }
       for (const p of more) {
         if (!passesQuality(p)) continue;
@@ -203,7 +218,9 @@ export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'c
 
   // Pass C: wider fallback to fill non-local slots
   if (localRaw.length + nonLocalRaw.length < TARGET_COUNT) {
-    const more = await batchSearch({ lat, lng, types, keyword, radius: 20000, seen });
+    const more = category === 'activity'
+      ? await activityKeywordSearch({ lat, lng, radius: 20000, seen })
+      : await batchSearch({ lat, lng, types, keyword, radius: 20000, seen });
     for (const p of more) {
       if (!passesQuality(p, 3.8, 10)) continue;
       if (!isInArea(p, areaName)) nonLocalRaw.push(p);
@@ -230,7 +247,9 @@ export async function getExpandedPlaces({ lat, lng, category = 'food', moment = 
   const all     = [];
 
   for (const radius of [15000, 25000, 40000]) {
-    const results = await batchSearch({ lat, lng, types, keyword, radius, seen });
+    const results = category === 'activity'
+      ? await activityKeywordSearch({ lat, lng, radius, seen })
+      : await batchSearch({ lat, lng, types, keyword, radius, seen });
     for (const p of results) {
       if (!passesQuality(p, 3.8, 10)) continue;
       all.push(p);

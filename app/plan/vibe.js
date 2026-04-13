@@ -9,7 +9,7 @@ import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
 import { SelectableCard } from '../../components/SelectableCard';
 import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
-import { getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel } from '../../services/placesService';
+import { getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel } from '../../services/placesService';
 
 const VIBES = [
   { id: 'Adventure', emoji: '⚡', desc: 'Active, exciting, and bold',    pro: true  },
@@ -98,9 +98,7 @@ export default function VibeScreen() {
     if (plan.mode === 'auto') {
       setShowLoader(true);
       try {
-        const city    = plan.city || 'Los Angeles, CA';
-        const vibeMap = { Adventure: 'adventure', Chill: 'chill', Romantic: 'romantic', Fun: 'fun' };
-        const vibeKey = vibeMap[selected] || 'chill';
+        const city    = plan.city || '';
 
         // ✅ Use stored coords if available, geocode city as fallback
         let lat, lng;
@@ -117,11 +115,17 @@ export default function VibeScreen() {
           lng = geoData.results[0].geometry.location.lng;
         }
 
-        let activityPlaces = await getPlacesByVibe(vibeKey, { lat, lng }, { radius: 8000, maxResults: 6 });
+        let activityPlaces = await getPlacesByCategory('activity', { lat, lng }, {
+          radius: 8000, maxResults: 6, budget: plan.budget,
+        });
         if (activityPlaces.length === 0) {
-          activityPlaces = await getPlacesByVibe('chill', { lat, lng }, { radius: 8000, maxResults: 6 });
+          activityPlaces = await getPlacesByCategory('activity', { lat, lng }, {
+            radius: 20000, maxResults: 6, budget: plan.budget,
+          });
         }
-        const foodPlaces = await getPlacesByVibe('foodie', { lat, lng }, { radius: 5000, maxResults: 6 });
+        const foodPlaces = await getPlacesByCategory('food', { lat, lng }, {
+          radius: 5000, maxResults: 6, budget: plan.budget,
+        });
 
         function calcDist(from, to) {
           if (!to) return null;
@@ -136,7 +140,7 @@ export default function VibeScreen() {
         }
 
         // ✅ Fixed mapPlace — includes all fields for rich summary card
-        function mapPlace(p, typeOverride) {
+        function mapPlace(p, typeOverride, curationCategory) {
           const category = typeOverride || getReadableType(p.types || []);
           const dist     = calcDist({ lat, lng }, p.location);
           const shortLoc = p.shortLocation || shortenVicinity(p.address) || '';
@@ -161,14 +165,14 @@ export default function VibeScreen() {
             tag:           (p.rating ?? 0) >= 4.8 ? 'Top rated'
                          : (p.totalRatings ?? 0) > 1000 ? 'Popular'
                          : p.isOpenNow ? 'Open now' : 'Nearby',
-            curationLabel: getCurationLabel({ ...p, distance: dist }, vibeKey),
+            curationLabel: getCurationLabel({ ...p, distance: dist }, curationCategory),
           };
         }
 
         const activity = activityPlaces.length > 0
-          ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)]) : null;
+          ? mapPlace(activityPlaces[Math.floor(Math.random() * activityPlaces.length)], null, 'activity') : null;
         const food = foodPlaces.length > 0
-          ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant') : null;
+          ? mapPlace(foodPlaces[Math.floor(Math.random() * foodPlaces.length)], 'Restaurant', 'food') : null;
 
         const addonTypes = ['flowers', 'dessert', 'scenic'];
         const addonType  = addonTypes[Math.floor(Math.random() * addonTypes.length)];

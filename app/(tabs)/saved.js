@@ -480,7 +480,7 @@ export default function SavedScreen() {
 
   function openCalendar(plan) {
     const title = encodeURIComponent(plan.title || 'Plannie Date Night');
-    const loc   = encodeURIComponent(plan.city  || 'Los Angeles, CA');
+    const loc   = encodeURIComponent(plan.city  || '');
     const url   = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${encodeURIComponent('Planned with Plannie 💕')}`;
     Linking.openURL(url).catch(() => Alert.alert('Could not open Calendar'));
   }

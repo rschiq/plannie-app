@@ -1,23 +1,14 @@
 // app/plan/activity.js
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
 import { ACTIVITIES } from '../../data';
-import { getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
+import { getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
-
-const VIBE_MAP = {
-  Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure',
-};
-
-const VIBE_RADIUS = {
-  chill: 5000, fun: 5000, romantic: 5000,
-  adventure: 20000, foodie: 5000,
-};
 
 function getTag(p) {
   if (p.rating >= 4.8)                          return 'Top rated';
@@ -57,9 +48,6 @@ export default function ActivityScreen() {
     // location loaded from plan.coords or geocoded from plan.city
 
     try {
-      const vibe         = VIBE_MAP[plan.vibe] || 'chill';
-      const searchRadius = VIBE_RADIUS[vibe] ?? 2000;
-
       let lat, lng;
 
       if (plan.coords?.lat && plan.coords?.lng) {
@@ -88,18 +76,18 @@ export default function ActivityScreen() {
 
       const selectedArea = (plan.city || '').split(',')[0].trim();
 
-      let places = await getPlacesByVibe(vibe, { lat, lng }, {
-        radius: searchRadius, maxResults: 12, selectedArea,
+      let places = await getPlacesByCategory('activity', { lat, lng }, {
+        radius: 8000, maxResults: 12, selectedArea, budget: plan.budget,
       });
 
-      if (places.length < 4 && vibe !== 'adventure') {
-        places = await getPlacesByVibe(vibe, { lat, lng }, {
-          radius: 20000, maxResults: 12, selectedArea,
+      if (places.length < 4) {
+        places = await getPlacesByCategory('activity', { lat, lng }, {
+          radius: 20000, maxResults: 12, selectedArea, budget: plan.budget,
         });
       }
       if (places.length < 3) {
-        places = await getPlacesByVibe(vibe, { lat, lng }, {
-          radius: 20000, maxResults: 12, selectedArea,
+        places = await getPlacesByCategory('activity', { lat, lng }, {
+          radius: 35000, maxResults: 12, selectedArea, budget: plan.budget,
         });
       }
 
@@ -132,7 +120,7 @@ export default function ActivityScreen() {
             popular:       p.totalRatings > 500,
             photoUrl:      p.photoUrl ?? null,
             location:      p.location || null,
-            curationLabel: getCurationLabel({ ...p, distance: dist }, vibe),
+            curationLabel: getCurationLabel({ ...p, distance: dist }, 'activity'),
           };
         });
         setItems(mapped);
@@ -158,7 +146,7 @@ export default function ActivityScreen() {
       <ScreenHeader
         title={'Your best\n'}
         italic="matches."
-        subtitle={`Top ${plan.vibe?.toLowerCase() || ''} activities near ${plan.city?.split(',')[0] || 'you'}.`}
+        subtitle={`Top activities near ${plan.city?.split(',')[0] || 'you'}.`}
       />
       <ProgressBar total={7} current={4} />
 

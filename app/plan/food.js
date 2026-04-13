@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
 import { RESTAURANTS } from '../../data';
-import { getPlacesNearby, getPlacesByVibe, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
+import { getPlacesNearby, getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
 
@@ -76,31 +76,31 @@ export default function FoodScreen() {
 
       if (activityLocation?.lat && activityLocation?.lng) {
         places = await getPlacesNearby(
-          ['restaurant', 'cafe', 'bar'],
+          ['restaurant'],
           activityLocation,
-          { radius: 1500, maxResults: 12, selectedArea }
+          { radius: 1500, maxResults: 12, selectedArea, category: 'food', budget: plan.budget }
         );
         if (places.length < 4) {
           places = await getPlacesNearby(
-            ['restaurant', 'cafe', 'bar'],
+            ['restaurant'],
             activityLocation,
-            { radius: 3000, maxResults: 12, selectedArea }
+            { radius: 3000, maxResults: 12, selectedArea, category: 'food', budget: plan.budget }
           );
         }
       }
 
       // Fallback to plan coords if no activity or still sparse
       if (places.length < 3) {
-        places = await getPlacesByVibe(
-          'foodie',
+        places = await getPlacesByCategory(
+          'food',
           { lat: baseLat, lng: baseLng },
-          { radius: 2000, maxResults: 12, selectedArea }
+          { radius: 2000, maxResults: 12, selectedArea, budget: plan.budget }
         );
         if (places.length < 4) {
-          places = await getPlacesByVibe(
-            'foodie',
+          places = await getPlacesByCategory(
+            'food',
             { lat: baseLat, lng: baseLng },
-            { radius: 5000, maxResults: 12, selectedArea }
+            { radius: 8000, maxResults: 12, selectedArea, budget: plan.budget }
           );
         }
       }
@@ -147,7 +147,7 @@ export default function FoodScreen() {
             popular:       p.totalRatings > 500,
             photoUrl:      p.photoUrl ?? null,
             location:      p.location || null,
-            curationLabel: getCurationLabel({ ...p, distance: dist }, 'foodie'),
+            curationLabel: getCurationLabel({ ...p, distance: dist }, 'food'),
           };
         });
 

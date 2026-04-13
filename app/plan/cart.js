@@ -85,7 +85,6 @@ function ItemActionSheet({ visible, item, onClose, onSwap, onRemove }) {
 // ─── Helpers ─────────────────────────────────────────────────
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
-const VIBE_MAP = { Chill: 'chill', Fun: 'fun', Romantic: 'romantic', Adventure: 'adventure' };
 
 // Readable type labels from raw Google types
 const TYPE_MAP = {
@@ -496,8 +495,7 @@ if (plan.coords?.lat && plan.coords?.lng) {
 
       // ── ACTIVITY / FOOD SWAP — progressive radius expansion ──
       const currentItem  = swapKey === 'food' ? plan.food : plan.activity;
-      const vibe         = VIBE_MAP[plan.vibe] || 'romantic';
-      const fetchVibe    = swapKey === 'food' ? 'foodie' : vibe;
+      const swapCategory = swapKey === 'food' ? 'food' : 'activity';
       const selectedArea = (plan.city || '').split(',')[0].trim();
 
       // Helper — exclude current item and already-planned items
@@ -537,35 +535,35 @@ if (plan.coords?.lat && plan.coords?.lng) {
 
       let finalList = [];
 
+      const categoryOpts = { maxResults: 15, selectedArea, budget: plan.budget };
+
       // ── PASS 1: tight radius around selected area (5km) ──
-      const pass1 = await getPlacesByCategory('activity', { lat, lng }, {
-  maxResults: 12,
-  selectedArea: plan.city || ''
-});
+      const pass1 = await getPlacesByCategory(swapCategory, { lat, lng }, {
+        ...categoryOpts, radius: 5000,
+      });
       finalList = qualityFilter(excludeCurrent(pass1));
 
       // ── PASS 2: medium radius (12km) if not enough ──
       if (finalList.length < 4) {
-        const pass2 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
-          radius: 12000, maxResults: 15, selectedArea,
+        const pass2 = await getPlacesByCategory(swapCategory, { lat, lng }, {
+          ...categoryOpts, radius: 12000,
         });
         finalList = qualityFilter(excludeCurrent(pass2));
       }
 
       // ── PASS 3: wide radius (25km) — nearby cities ──
       if (finalList.length < 3) {
-        const pass3 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
-          radius: 25000, maxResults: 15, selectedArea: '',
+        const pass3 = await getPlacesByCategory(swapCategory, { lat, lng }, {
+          ...categoryOpts, radius: 25000, selectedArea: '',
         });
         finalList = qualityFilter(excludeCurrent(pass3));
       }
 
       // ── PASS 4: very wide (50km) — last resort ──
       if (finalList.length < 2) {
-        const pass4 = await getPlacesByVibe(fetchVibe, { lat, lng }, {
-          radius: 50000, maxResults: 15, selectedArea: '',
+        const pass4 = await getPlacesByCategory(swapCategory, { lat, lng }, {
+          ...categoryOpts, radius: 50000, selectedArea: '',
         });
-        // At this point drop quality filter — just exclude current
         finalList = excludeCurrent(pass4);
       }
 
@@ -994,16 +992,14 @@ export default function CartScreen() {
     const newLocation = item?.location;
     if (!newLocation?.lat || !newLocation?.lng) return;
 
-    const vibe = VIBE_MAP[plan.vibe] || 'romantic';
-
     if (key === 'activity' && plan.food) {
       // Activity moved — silently refresh food near new activity location
       setLocationSyncing(true);
       try {
         const nearbyFood = await getPlacesNearby(
-          ['restaurant', 'cafe', 'bar'],
+          ['restaurant'],
           newLocation,
-          { radius: 3000, maxResults: 8 }
+          { radius: 3000, maxResults: 8, category: 'food', budget: plan.budget }
         );
         if (nearbyFood.length > 0) {
           // Pick the best option that isn't the current food item
@@ -1030,7 +1026,7 @@ export default function CartScreen() {
                 photoUrl:      best.photoUrl ?? null,
                 tag:           (best.rating ?? 0) >= 4.8 ? 'Top rated' : 'Nearby',
                 featured:      (best.rating ?? 0) >= 4.5,
-                curationLabel: getCurationLabel({ ...best, distance: dist }, 'foodie'),
+                curationLabel: getCurationLabel({ ...best, distance: dist }, 'food'),
               }
             });
           }
@@ -1044,8 +1040,8 @@ export default function CartScreen() {
       // Food moved — silently refresh activity near new food location
       setLocationSyncing(true);
       try {
-        const nearbyActivity = await getPlacesByVibe(vibe, newLocation, {
-          radius: 3000, maxResults: 8,
+        const nearbyActivity = await getPlacesByCategory('activity', newLocation, {
+          radius: 3000, maxResults: 8, budget: plan.budget,
         });
         if (nearbyActivity.length > 0) {
           const best = nearbyActivity.find(p =>
@@ -1071,7 +1067,7 @@ export default function CartScreen() {
                 photoUrl:      best.photoUrl ?? null,
                 tag:           (best.rating ?? 0) >= 4.8 ? 'Top rated' : 'Nearby',
                 featured:      (best.rating ?? 0) >= 4.5,
-                curationLabel: getCurationLabel({ ...best, distance: dist }, vibe),
+                curationLabel: getCurationLabel({ ...best, distance: dist }, 'activity'),
               }
             });
           }

@@ -26,7 +26,7 @@ export function PlanProvider({ children }) {
   const [plan, setPlan] = useState({
     date: '',
     dateDisplay: '',
-    city: 'Los Angeles, CA',
+    city: '',
     time: '',
     timeDisplay: '',
     vibe: '',
@@ -63,7 +63,7 @@ export function PlanProvider({ children }) {
     setPlan({
       date: '',
       dateDisplay: '',
-      city: 'Los Angeles, CA',
+      city: '',
       time: '',
       timeDisplay: '',
       vibe: '',
