@@ -21,6 +21,8 @@
 //   bucket independently, then combining local-first.
 // ─────────────────────────────────────────────────────────────
 
+import { activityVenueSignals } from './placesService';
+
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const TARGET_COUNT   = 15;
 
@@ -100,12 +102,15 @@ export function isInArea(place, areaName) {
   return false;
 }
 
-function passesQuality(place, minRating = 3.8, minReviews = 10) {
+function passesQuality(place, minRating = 3.8, minReviews = 10, category = '') {
   if ((place.rating ?? 0) < minRating)             return false;
   if ((place.user_ratings_total ?? 0) < minReviews) return false;
-  if (place.types?.includes('store')) return false;
-  if (place.types?.includes('park')) return false;
-  if (place.types?.includes('tourist_attraction')) return false;
+  const hybrid = category === 'activity' && activityVenueSignals(place);
+  if (!hybrid) {
+    if (place.types?.includes('store')) return false;
+    if (place.types?.includes('park')) return false;
+    if (place.types?.includes('tourist_attraction')) return false;
+  }
   if (isBlocked(place.name))                        return false;
   return true;
 }
@@ -156,8 +161,20 @@ function sortBucket(places, origin) {
   });
 }
 
+// 0 = exact (area string or ≤2 mi), 1 = adjacent local (≤3 mi), 2 = wider — distance only, no hardcoded cities
+function localityTier(place, origin, areaName) {
+  const loc = place.geometry?.location;
+  const dMi = calcDistance(origin, loc);
+  const inAreaStr = areaName && isInArea(place, areaName);
+  if (inAreaStr || dMi <= 2) return 0;
+  if (dMi <= 3) return 1;
+  return 2;
+}
+
 function mapPlace(p, origin, areaName, isExpanded = false) {
   const dist = calcDistance(origin, p.geometry?.location);
+  const tier = areaName ? localityTier(p, origin, areaName) : 2;
+  const expanded = areaName ? tier >= 1 : isExpanded;
   return {
     id:           p.place_id,
     name:         p.name,
@@ -166,7 +183,7 @@ function mapPlace(p, origin, areaName, isExpanded = false) {
     address:      p.vicinity || '',
     distance:     dist.toFixed(1),
     inArea:       isInArea(p, areaName),
-    isExpanded,
+    isExpanded:   expanded,
     types:        p.types || [],
     photoUrl:     p.photos?.[0]?.photo_reference
       ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
@@ -179,13 +196,25 @@ function mapPlace(p, origin, areaName, isExpanded = false) {
 }
 
 // ── MAIN: getNearbyPlaces ─────────────────────────────────────
+function pushByTier(p, origin, areaName, tier0, tier1, tier2, placedIds) {
+  const id = p.place_id;
+  if (!id || placedIds.has(id)) return;
+  placedIds.add(id);
+  const t = areaName ? localityTier(p, origin, areaName) : 2;
+  if (t === 0) tier0.push(p);
+  else if (t === 1) tier1.push(p);
+  else tier2.push(p);
+}
+
 export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'casual_hangout', areaName = '' }) {
   const types   = CATEGORY_TYPES[category] || ['restaurant'];
   const keyword = MOMENT_KEYWORDS[moment]?.[category] || '';
   const origin  = { lat, lng };
   const seen    = new Set();
-  const localRaw    = [];
-  const nonLocalRaw = [];
+  const tier0Raw = [];
+  const tier1Raw = [];
+  const tier2Raw = [];
+  const placedInTiers = new Set();
 
   // Pass A: tight local search (3km)
   let passA = [];
@@ -195,12 +224,12 @@ export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'c
     passA = await batchSearch({ lat, lng, types, keyword, radius: 3000, seen });
   }
   for (const p of passA) {
-    if (!passesQuality(p)) continue;
-    isInArea(p, areaName) ? localRaw.push(p) : nonLocalRaw.push(p);
+    if (!passesQuality(p, 3.8, 10, category)) continue;
+    pushByTier(p, origin, areaName, tier0Raw, tier1Raw, tier2Raw, placedInTiers);
   }
 
-  // Pass B: expand radius if not enough local (5km → 8km → 12km)
-  if (localRaw.length < TARGET_COUNT) {
+  // Pass B: expand radius if not enough in exact + adjacent tiers
+  if (tier0Raw.length + tier1Raw.length < TARGET_COUNT) {
     for (const radius of [5000, 8000, 12000]) {
       let more = [];
       if (category === 'activity') {
@@ -209,31 +238,31 @@ export async function getNearbyPlaces({ lat, lng, category = 'food', moment = 'c
         more = await batchSearch({ lat, lng, types, keyword, radius, seen });
       }
       for (const p of more) {
-        if (!passesQuality(p)) continue;
-        isInArea(p, areaName) ? localRaw.push(p) : nonLocalRaw.push(p);
+        if (!passesQuality(p, 3.8, 10, category)) continue;
+        pushByTier(p, origin, areaName, tier0Raw, tier1Raw, tier2Raw, placedInTiers);
       }
-      if (localRaw.length >= TARGET_COUNT) break;
+      if (tier0Raw.length + tier1Raw.length >= TARGET_COUNT) break;
     }
   }
 
-  // Pass C: wider fallback to fill non-local slots
-  if (localRaw.length + nonLocalRaw.length < TARGET_COUNT) {
+  // Pass C: wider fallback to fill remaining slots
+  if (tier0Raw.length + tier1Raw.length + tier2Raw.length < TARGET_COUNT) {
     const more = category === 'activity'
       ? await activityKeywordSearch({ lat, lng, radius: 20000, seen })
       : await batchSearch({ lat, lng, types, keyword, radius: 20000, seen });
     for (const p of more) {
-      if (!passesQuality(p, 3.8, 10)) continue;
-      if (!isInArea(p, areaName)) nonLocalRaw.push(p);
+      if (!passesQuality(p, 3.8, 10, category)) continue;
+      pushByTier(p, origin, areaName, tier0Raw, tier1Raw, tier2Raw, placedInTiers);
     }
   }
 
-  // Sort each bucket independently — LOCAL always before NON-LOCAL
   const combined = [
-    ...sortBucket(localRaw, origin),
-    ...sortBucket(nonLocalRaw, origin),
+    ...sortBucket(tier0Raw, origin),
+    ...sortBucket(tier1Raw, origin),
+    ...sortBucket(tier2Raw, origin),
   ];
 
-  return combined.slice(0, 20).map(p => mapPlace(p, origin, areaName, !isInArea(p, areaName)));
+  return combined.slice(0, 20).map(p => mapPlace(p, origin, areaName, localityTier(p, origin, areaName) >= 1));
 }
 
 // ── EXPORT: getExpandedPlaces ─────────────────────────────────
@@ -251,7 +280,7 @@ export async function getExpandedPlaces({ lat, lng, category = 'food', moment = 
       ? await activityKeywordSearch({ lat, lng, radius, seen })
       : await batchSearch({ lat, lng, types, keyword, radius, seen });
     for (const p of results) {
-      if (!passesQuality(p, 3.8, 10)) continue;
+      if (!passesQuality(p, 3.8, 10, category)) continue;
       all.push(p);
     }
     if (all.length >= 15) break;

@@ -44,6 +44,21 @@ export function PlanProvider({ children }) {
 
   const [savedPlans, setSavedPlans] = useState([]);
 
+  // ── Load current in-progress plan from AsyncStorage ───────────
+  useEffect(() => {
+    AsyncStorage.getItem('@plannie_current_plan')
+      .then(data => {
+        if (!data) return;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed && typeof parsed === 'object') {
+            setPlan(prev => ({ ...prev, ...parsed }));
+          }
+        } catch {}
+      })
+      .catch(() => {});
+  }, []);
+
   // ── Load saved plans from AsyncStorage on mount ───────────────
   useEffect(() => {
     AsyncStorage.getItem('@plannie_saved_plans')
@@ -56,6 +71,12 @@ export function PlanProvider({ children }) {
     AsyncStorage.setItem('@plannie_saved_plans', JSON.stringify(savedPlans))
       .catch(() => {});
   }, [savedPlans]);
+
+  // ── Persist current in-progress plan across app sessions ──────
+  useEffect(() => {
+    AsyncStorage.setItem('@plannie_current_plan', JSON.stringify(plan))
+      .catch(() => {});
+  }, [plan]);
 
   const updatePlan = (updates) => setPlan((prev) => ({ ...prev, ...updates }));
 
