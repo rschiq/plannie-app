@@ -11,18 +11,283 @@ import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { isInArea, calcDistance } from '../../services/nearbyPlacesService';
-import { getPlacesByCategory } from '../../services/placesService';
+import { getPlacesNearby } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
+import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
+import PaywallModal from '../../components/PaywallModal';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
 
 // ── Category config ────────────────────────────────────────────
 const CATEGORY_LABELS = {
-  food: 'Restaurants', drinks: 'Bars & Nightlife',
-  coffee: 'Coffee Shops', activity: 'Activities',
+  activity: 'Activities',
 };
+
+const FOOD_SUBCATEGORY_CONFIG = {
+  brunch_dinner: {
+    mode: 'brunch_dinner',
+    displayTitle: 'Restaurants',
+    fetchTypes: ['restaurant', 'bakery'],
+    includeKeywords: ['brunch', 'dinner', 'grill', 'kitchen', 'eatery', 'restaurant'],
+    excludeKeywords: ['bar only', 'nightclub', 'coffee roasters', 'cafe'],
+    rankingBoostKeywords: ['restaurant', 'brunch', 'grill', 'kitchen', 'steak', 'wine'],
+    rejectedTypes: ['grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+  },
+  coffee_dessert: {
+    mode: 'coffee_dessert',
+    displayTitle: 'Cafes',
+    fetchTypes: ['cafe', 'bakery'],
+    includeKeywords: ['coffee', 'cafe', 'espresso', 'tea', 'dessert', 'bakery', 'starbucks'],
+    excludeKeywords: ['steakhouse', 'grill house', 'nightclub', 'sports bar'],
+    rankingBoostKeywords: ['local', 'artisan', 'espresso', 'cafe', 'bakery', 'dessert'],
+    rejectedTypes: ['bar', 'night_club', 'liquor_store', 'grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+  },
+  drinks: {
+    mode: 'drinks',
+    displayTitle: 'Bars',
+    fetchTypes: ['bar'],
+    includeKeywords: ['bar', 'cocktail', 'wine', 'pub', 'speakeasy', 'lounge', 'rooftop', 'bistro'],
+    excludeKeywords: ['coffee', 'cafe', 'espresso', 'bakery'],
+    rankingBoostKeywords: ['cocktail', 'wine', 'speakeasy', 'rooftop', 'lounge', 'pub'],
+    rejectedTypes: ['cafe', 'bakery', 'grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+  },
+};
+
+function resolveResultsMode(category, dateIdea) {
+  if (category === 'food') {
+    const resolved = FOOD_SUBCATEGORY_CONFIG[dateIdea] || FOOD_SUBCATEGORY_CONFIG.brunch_dinner;
+    return {
+      ...resolved,
+      isFoodMode: true,
+    };
+  }
+
+  return {
+    mode: category || 'activity',
+    displayTitle: CATEGORY_LABELS[category] || 'Places',
+    fetchTypes: getPlaceTypes(category, dateIdea),
+    includeKeywords: [],
+    excludeKeywords: [],
+    rankingBoostKeywords: [],
+    rejectedTypes: [],
+    isFoodMode: false,
+  };
+}
+
+function getPlaceTypes(category, dateIdea) {
+  if (category === 'food') {
+    return (FOOD_SUBCATEGORY_CONFIG[dateIdea]?.fetchTypes || FOOD_SUBCATEGORY_CONFIG.brunch_dinner.fetchTypes).slice();
+  }
+
+  if (category === 'activity') {
+    switch (dateIdea) {
+      case 'fun':
+        return ['amusement_center', 'bowling_alley'];
+      case 'movies':
+        return ['movie_theater'];
+      case 'outdoor':
+        return ['park'];
+      case 'scenic':
+        return ['tourist_attraction'];
+      case 'arcade':
+        return ['amusement_center'];
+      case 'unique':
+        return ['tourist_attraction'];
+      default:
+        return ['tourist_attraction'];
+    }
+  }
+
+  return [];
+}
+
+function applyBudgetFilter(results, budget) {
+  if (!results || results.length === 0) return results;
+
+  let filtered = results;
+
+  if (budget === '$$') {
+    filtered = results.filter((place) => (place.rating || 0) >= 4.0);
+  }
+
+  if (budget === '$$$') {
+    filtered = results.filter((place) => (place.rating || 0) >= 4.3);
+  }
+
+  return filtered;
+}
+
+function lightFilter(results) {
+  return (results || []).filter((place) => {
+    const name = (place.name || '').toLowerCase();
+    const types = place.types || [];
+
+    // remove only obvious junk
+    if (
+      name.includes('walmart') ||
+      name.includes('target') ||
+      name.includes('whole foods') ||
+      name.includes('pavilions') ||
+      name.includes('ralphs') ||
+      types.includes('grocery_or_supermarket') ||
+      types.includes('supermarket') ||
+      types.includes('department_store')
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
+  let filtered = results || [];
+
+  // REMOVE FAST FOOD (ALL CATEGORIES)
+  filtered = filtered.filter((place) => {
+    const name = (place.name || '').toLowerCase();
+    if (
+      name.includes('mcdonald') ||
+      name.includes('burger king') ||
+      name.includes('wendy') ||
+      name.includes('jack in the box') ||
+      name.includes('kfc')
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  if (category === 'food' && resolvedMode?.isFoodMode) {
+    if (dateIdea === 'drinks') {
+      filtered = filtered.filter((place) => {
+        const types = place.types || [];
+        const name = (place.name || '').toLowerCase();
+        return (
+          types.includes('bar') ||
+          name.includes('bar') ||
+          name.includes('lounge') ||
+          name.includes('pub') ||
+          name.includes('cocktail')
+        );
+      });
+    }
+
+    if (dateIdea === 'coffee_dessert') {
+      filtered = filtered.filter((place) => {
+        const types = place.types || [];
+        const name = (place.name || '').toLowerCase();
+        return (
+          types.includes('cafe') ||
+          types.includes('bakery') ||
+          name.includes('coffee') ||
+          name.includes('cafe') ||
+          name.includes('espresso') ||
+          name.includes('starbucks')
+        );
+      });
+    }
+
+    if (dateIdea === 'brunch_dinner') {
+      filtered = filtered.filter((place) => {
+        const types = place.types || [];
+        const name = (place.name || '').toLowerCase();
+
+        // remove fast food and low-effort places
+        if (
+          name.includes('mcdonald') ||
+          name.includes('burger king') ||
+          name.includes('wendy') ||
+          name.includes('jack in the box') ||
+          name.includes('in-n-out') ||
+          name.includes("bob's big boy")
+        ) {
+          return false;
+        }
+
+        return types.includes('restaurant');
+      });
+    }
+  }
+
+  return filtered;
+}
+
+function scorePlace(place, dateIdea, resolvedMode) {
+  const rating = Number(place?.rating || 0);
+  const reviews = Number(place?.user_ratings_total || place?.totalRatings || 0);
+  const distanceRaw = place?.distanceMiles ?? place?.distance ?? 0;
+  const distance = Number(distanceRaw) || 0;
+
+  let score = rating + (reviews / 1000);
+  // Penalize distance
+  score -= distance * 0.5;
+
+  const name = (place.name || '').toLowerCase();
+  const types = place.types || [];
+
+  // Penalize bad fast food
+  if (
+    name.includes('mcdonald') ||
+    name.includes('burger king') ||
+    name.includes('wendy') ||
+    name.includes('jack in the box')
+  ) {
+    score -= 2;
+  }
+
+  // Slight penalty for casual chains
+  if (
+    name.includes('in-n-out') ||
+    name.includes("bob's big boy")
+  ) {
+    score -= 1;
+  }
+
+  // BOOST Starbucks (IMPORTANT)
+  if (name.includes('starbucks')) {
+    score += 0.3;
+  }
+
+  // Boost cafes slightly
+  if (
+    name.includes('cafe') ||
+    name.includes('coffee')
+  ) {
+    score += 0.3;
+  }
+
+  if (resolvedMode?.isFoodMode) {
+    const boosts = resolvedMode.rankingBoostKeywords || [];
+    const boostHits = boosts.filter((word) => name.includes(word)).length;
+    score += boostHits * 0.2;
+
+    if (resolvedMode.mode === 'coffee_dessert' && name.includes('starbucks')) {
+      score -= 0.15;
+    }
+  }
+
+  if (dateIdea === 'arcade') {
+    if (
+      name.includes('arcade') ||
+      name.includes('game') ||
+      name.includes('bowling')
+    ) {
+      score += 1;
+    }
+
+    if (
+      name.includes('universal') ||
+      name.includes('hotel')
+    ) {
+      score -= 2;
+    }
+  }
+
+  return score;
+}
 
 // ── Activity: all search passes with subtype tags ─────────────
 // Each entry has: type (Google Places type), keyword, tag (subtype bucket)
@@ -216,9 +481,14 @@ const det = StyleSheet.create({
 });
 
 // ── Place Card ─────────────────────────────────────────────────
-function PlaceCard({ place, onPress }) {
+function PlaceCard({ place, onPress, variant = 'default' }) {
+  const isTopPick = variant === 'top';
   return (
-    <TouchableOpacity style={card.wrap} onPress={onPress} activeOpacity={0.88}>
+    <TouchableOpacity
+      style={[card.wrap, isTopPick && card.wrapTop]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
       {place.photoUrl ? (
         <Image source={{ uri: place.photoUrl }} style={card.photo} resizeMode="cover" />
       ) : (
@@ -238,12 +508,18 @@ function PlaceCard({ place, onPress }) {
 }
 
 const card = StyleSheet.create({
-  wrap:  { backgroundColor: colors.cream2, borderRadius: radius.md, marginBottom: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4, ...shadow.sm },
-  photo: { width: '100%', height: 160 },
-  photoPlaceholder: { width: '100%', height: 80, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
+  wrap:  { backgroundColor: colors.cream2, borderRadius: 16, marginBottom: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4, ...shadow.sm },
+  wrapTop: {
+    backgroundColor: colors.white,
+    borderColor: 'rgba(212,149,111,0.40)',
+    borderWidth: 1.5,
+    ...shadow.md,
+  },
+  photo: { width: '100%', height: 180 },
+  photoPlaceholder: { width: '100%', height: 180, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
   photoIcon: { fontSize: 28 },
   body:  { padding: 14 },
-  name:  { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 5 },
+  name:  { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, marginBottom: 6 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 3, flexWrap: 'wrap' },
   rating:   { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
   reviews:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
@@ -299,11 +575,21 @@ export default function ResultsScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchSelected, setSearchSelected] = useState(null);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const category = plan.category || 'food';
-  const label    = CATEGORY_LABELS[category] || 'Places';
+  const resolvedMode = resolveResultsMode(category, plan.dateIdea);
+  const label = resolvedMode.displayTitle;
+  const locationLabel = plan.location || '';
+  const topPicks = places.slice(0, 5);
+  const moreOptions = places.slice(5);
 
   useEffect(() => { fetchPlaces(); }, []);
+  useEffect(() => {
+    if (topPicks.length > 0) {
+      console.log('[Ranking] Top Picks:', topPicks.map((p) => p.name));
+    }
+  }, [places]);
 
   // ── Fetch using nearbyPlacesService ─────────────────────────
   async function fetchPlaces() {
@@ -311,6 +597,14 @@ export default function ResultsScreen() {
     setError(null);
     const startTime = Date.now();
     try {
+      const runGate = await consumeRunIfAvailable();
+      if (!runGate.allowed) {
+        setShowPaywall(true);
+        await minLoadingDisplaySince(startTime);
+        setLoading(false);
+        return;
+      }
+
       // ✅ Use stored coords — set by location picker in details.js
       // Fall back to geocoding city string if coords missing
       let lat, lng;
@@ -318,7 +612,7 @@ export default function ResultsScreen() {
         lat = plan.coords.lat;
         lng = plan.coords.lng;
       } else {
-        const city = plan.city || '';
+        const city = locationLabel;
         const res  = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
         );
@@ -329,15 +623,73 @@ export default function ResultsScreen() {
       }
 
       // Extract clean area name from city string (e.g. "Studio City, CA" → "Studio City")
-      const areaName = (plan.city || '').split(',')[0].trim();
+      const areaName = locationLabel.split(',')[0].trim();
 
-      const cat = plan.category || 'food';
-      const raw = await getPlacesByCategory(cat, { lat, lng }, {
+      const types = resolvedMode.fetchTypes;
+      console.log('[ResultsMode] selectedFoodSubcategory:', plan.dateIdea || null);
+      console.log('[ResultsMode] resolvedMode:', resolvedMode.mode);
+      console.log('[ResultsMode] headerTitle:', resolvedMode.displayTitle);
+      console.log('[ResultsMode] fetchTypes:', types);
+      console.log('[ResultsMode] includeKeywords:', resolvedMode.includeKeywords || []);
+      console.log('[ResultsMode] excludeKeywords:', resolvedMode.excludeKeywords || []);
+      console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
+      let raw = await getPlacesNearby(types, { lat, lng }, {
         radius: 8000,
         maxResults: 24,
         selectedArea: areaName,
         budget: plan.budget,
       });
+      raw = lightFilter(raw);
+      raw = applyCategoryFilter(raw, plan.dateIdea, resolvedMode, plan.category);
+      const beforeBudgetFilterCount = raw.length;
+      console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
+      const budgetFiltered = applyBudgetFilter(raw, plan.budget);
+      raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
+      const LOCAL_RADIUS = 10000; // 10 km (~6 miles)
+      let localResults = raw.filter((place) => {
+        const distanceMiles = Number(place?.distanceMiles ?? place?.distance ?? 99999) || 99999;
+        const distanceMeters = distanceMiles * 1609.34;
+        return distanceMeters <= LOCAL_RADIUS;
+      });
+      console.log('[Local] radius:', LOCAL_RADIUS);
+      console.log('[Local] localResults:', localResults.length);
+      if (localResults.length >= 5) {
+        raw = localResults;
+      } else {
+        console.log('[Local] not enough local, expanding search');
+        const localIds = new Set(localResults.map((p) => p.id));
+        const nonLocal = raw.filter((p) => !localIds.has(p.id));
+        raw = [...localResults, ...nonLocal].slice(0, 20);
+      }
+      const selectedArea = (plan.location || '')
+        .split(',')[0]
+        .trim()
+        .toLowerCase();
+      const inArea = raw.filter((place) => {
+        const address = (place.vicinity || place.address || '').toLowerCase();
+        return selectedArea && address.includes(selectedArea);
+      });
+      const nearby = raw.filter((place) => {
+        const address = (place.vicinity || place.address || '').toLowerCase();
+        return !selectedArea || !address.includes(selectedArea);
+      });
+      console.log('[Area] selectedArea:', selectedArea);
+      console.log('[Area] inArea:', inArea.length);
+      console.log('[Area] nearby:', nearby.length);
+      raw = inArea.length >= 5 ? inArea : [...inArea, ...nearby];
+      raw.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
+      raw.sort((a, b) => {
+        const aDistanceMiles = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
+        const bDistanceMiles = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
+        const aLocal = (aDistanceMiles * 1609.34) <= LOCAL_RADIUS;
+        const bLocal = (bDistanceMiles * 1609.34) <= LOCAL_RADIUS;
+        if (aLocal && !bLocal) return -1;
+        if (!aLocal && bLocal) return 1;
+        return 0;
+      });
+      console.log('[Local] finalResults:', raw.length);
+      console.log('[BudgetFilter] budget:', plan.budget, 'after:', raw.length);
+      console.log('[ResultsMode] top10AfterFilterRanking:', raw.slice(0, 10).map((p) => p.name));
 
       const mapped = raw.map((p) => {
         const dist = p.distanceMiles ?? calcDistance({ lat, lng }, p.location);
@@ -357,6 +709,7 @@ export default function ResultsScreen() {
         };
       });
 
+      mapped.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
       setPlaces(mapped.slice(0, 20));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
@@ -382,7 +735,7 @@ export default function ResultsScreen() {
         lat = plan.coords.lat;
         lng = plan.coords.lng;
       } else {
-        const city = plan.city || '';
+        const city = locationLabel;
         const res  = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
         );
@@ -392,15 +745,73 @@ export default function ResultsScreen() {
       }
 
       const existingIds = new Set(places.map(p => p.id));
-      const areaName = (plan.city || '').split(',')[0].trim();
-      const cat = plan.category || 'food';
+      const areaName = locationLabel.split(',')[0].trim();
+      const types = resolvedMode.fetchTypes;
+      console.log('[ResultsMode] selectedFoodSubcategory:', plan.dateIdea || null);
+      console.log('[ResultsMode] resolvedMode:', resolvedMode.mode);
+      console.log('[ResultsMode] headerTitle:', resolvedMode.displayTitle);
+      console.log('[ResultsMode] fetchTypes:', types);
+      console.log('[ResultsMode] includeKeywords:', resolvedMode.includeKeywords || []);
+      console.log('[ResultsMode] excludeKeywords:', resolvedMode.excludeKeywords || []);
+      console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
 
-      const rawMore = await getPlacesByCategory(cat, { lat, lng }, {
+      let rawMore = await getPlacesNearby(types, { lat, lng }, {
         radius: 35000,
         maxResults: 40,
         selectedArea: areaName,
         budget: plan.budget,
       });
+      rawMore = lightFilter(rawMore);
+      rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
+      const beforeBudgetFilterCount = rawMore.length;
+      console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
+      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
+      rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
+      const LOCAL_RADIUS = 10000; // 10 km (~6 miles)
+      let localResults = rawMore.filter((place) => {
+        const distanceMiles = Number(place?.distanceMiles ?? place?.distance ?? 99999) || 99999;
+        const distanceMeters = distanceMiles * 1609.34;
+        return distanceMeters <= LOCAL_RADIUS;
+      });
+      console.log('[Local] radius:', LOCAL_RADIUS);
+      console.log('[Local] localResults:', localResults.length);
+      if (localResults.length >= 5) {
+        rawMore = localResults;
+      } else {
+        console.log('[Local] not enough local, expanding search');
+        const localIds = new Set(localResults.map((p) => p.id));
+        const nonLocal = rawMore.filter((p) => !localIds.has(p.id));
+        rawMore = [...localResults, ...nonLocal].slice(0, 20);
+      }
+      const selectedArea = (plan.location || '')
+        .split(',')[0]
+        .trim()
+        .toLowerCase();
+      const inArea = rawMore.filter((place) => {
+        const address = (place.vicinity || place.address || '').toLowerCase();
+        return selectedArea && address.includes(selectedArea);
+      });
+      const nearby = rawMore.filter((place) => {
+        const address = (place.vicinity || place.address || '').toLowerCase();
+        return !selectedArea || !address.includes(selectedArea);
+      });
+      console.log('[Area] selectedArea:', selectedArea);
+      console.log('[Area] inArea:', inArea.length);
+      console.log('[Area] nearby:', nearby.length);
+      rawMore = inArea.length >= 5 ? inArea : [...inArea, ...nearby];
+      rawMore.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
+      rawMore.sort((a, b) => {
+        const aDistanceMiles = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
+        const bDistanceMiles = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
+        const aLocal = (aDistanceMiles * 1609.34) <= LOCAL_RADIUS;
+        const bLocal = (bDistanceMiles * 1609.34) <= LOCAL_RADIUS;
+        if (aLocal && !bLocal) return -1;
+        if (!aLocal && bLocal) return 1;
+        return 0;
+      });
+      console.log('[Local] finalResults:', rawMore.length);
+      console.log('[BudgetFilter] budget:', plan.budget, 'after:', rawMore.length);
+      console.log('[ResultsMode] top10AfterFilterRanking:', rawMore.slice(0, 10).map((p) => p.name));
 
       const moreResults = rawMore
         .filter(p => !existingIds.has(p.id))
@@ -423,7 +834,11 @@ export default function ResultsScreen() {
         })
         .slice(0, 15);
 
-      setPlaces(prev => [...prev, ...moreResults]);
+      setPlaces(prev => {
+        const combined = [...prev, ...moreResults];
+        combined.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
+        return combined;
+      });
       setExpanded(true);
     } catch (e) {
       console.log('[Results] expand error:', e.message);
@@ -443,7 +858,7 @@ export default function ResultsScreen() {
         lat = plan.coords.lat;
         lng = plan.coords.lng;
       } else {
-        const city = plan.city || '';
+        const city = locationLabel;
         const res  = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
         );
@@ -452,7 +867,7 @@ export default function ResultsScreen() {
         lng = data.results[0].geometry.location.lng;
       }
 
-      const areaName = (plan.city || '').split(',')[0].trim();
+      const areaName = locationLabel.split(',')[0].trim();
 
       // Search 1: tight local radius (5km) with user query
       const params1 = new URLSearchParams({
@@ -529,7 +944,7 @@ export default function ResultsScreen() {
       group:    plan.group,
       moment:   plan.moment,
       category: plan.category,
-      city:     plan.city,
+      city:     locationLabel,
     });
     setSavedIds(prev => new Set([...prev, place.id]));
 
@@ -552,7 +967,7 @@ export default function ResultsScreen() {
       group:    plan.group,
       moment:   plan.moment,
       category: plan.category,
-      city:     plan.city,
+      city:     locationLabel,
     });
     setSavedIds(prev => new Set([...prev, place.id]));
     Alert.alert('Saved! 🔖', `${place.name} has been saved to your Saved tab.`);
@@ -567,7 +982,7 @@ export default function ResultsScreen() {
             <Text style={s.backText}>← Back</Text>
           </TouchableOpacity>
           <Text style={s.title}>{label}</Text>
-          <Text style={s.sub}>Near {plan.city || 'your location'} · sorted by rating</Text>
+          <Text style={s.sub}>Near {locationLabel || 'your location'} · sorted by rating</Text>
         </View>
 
         {loading ? (
@@ -597,8 +1012,9 @@ export default function ResultsScreen() {
           >
             <Text style={s.count}>{places.length} places found · tap for details</Text>
 
-            {/* ── Place cards ── */}
-            {places.map(p => (
+            {/* ── Top Picks ── */}
+            {topPicks.length > 0 && <Text style={s.sectionTitleTop}>Top Picks</Text>}
+            {topPicks.map(p => (
               <View key={p.id}>
                 {/* Label when expanded results start */}
                 {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
@@ -606,7 +1022,20 @@ export default function ResultsScreen() {
                     <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
                   </View>
                 )}
-                <PlaceCard place={p} onPress={() => openDetail(p)} />
+                <PlaceCard place={p} onPress={() => openDetail(p)} variant="top" />
+              </View>
+            ))}
+
+            {/* ── More Options ── */}
+            {moreOptions.length > 0 && <Text style={s.sectionTitleMore}>More Options</Text>}
+            {moreOptions.map(p => (
+              <View key={p.id}>
+                {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
+                  <View style={s.expandedLabel}>
+                    <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
+                  </View>
+                )}
+                <PlaceCard place={p} onPress={() => openDetail(p)} variant="default" />
               </View>
             ))}
 
@@ -673,7 +1102,7 @@ export default function ResultsScreen() {
             <View style={s.searchHandle} />
             <Text style={s.searchTitle}>Search for a Place</Text>
             <Text style={s.searchSub}>
-              Search near {(plan.city || '').split(',')[0] || 'your location'}
+              Search near {locationLabel.split(',')[0] || 'your location'}
             </Text>
 
             {/* Search input */}
@@ -746,6 +1175,23 @@ export default function ResultsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <PaywallModal
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onUpgrade={() => {
+          console.log('[Paywall] upgrade clicked');
+          setShowPaywall(false);
+        }}
+        onGet20MorePlans={async () => {
+          await addExtraRuns(20);
+          setShowPaywall(false);
+        }}
+        onGet50MorePlans={async () => {
+          await addExtraRuns(50);
+          setShowPaywall(false);
+        }}
+      />
     </View>
   );
 }
@@ -759,8 +1205,22 @@ const s = StyleSheet.create({
   title:       { fontFamily: fonts.display, fontSize: 28, color: colors.charcoal, marginBottom: 3 },
   sub:         { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
   scroll:      { flex: 1 },
-  content:     { paddingHorizontal: 20, paddingTop: 14 },
+  content:     { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12 },
   count:       { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginBottom: 12, letterSpacing: 0.3 },
+  sectionTitleTop:  {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
+    color: colors.charcoal,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  sectionTitleMore: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: colors.gray,
+    marginBottom: 10,
+    marginTop: 14,
+  },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   loaderBody:  { flex: 1, minHeight: 0, width: '100%' },
   errorText:   { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.gray, textAlign: 'center', marginBottom: 8 },

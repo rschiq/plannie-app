@@ -30,7 +30,12 @@ export default function MomentScreen() {
 
   function handleContinue() {
     if (!selected) return;
-    updatePlan({ moment: selected, category: null });
+    const updates = { moment: selected, category: null };
+    console.log('[Plan Step 3] committing_selection', {
+      updates,
+      nextPlanPreview: { ...plan, ...updates },
+    });
+    updatePlan(updates);
     router.push('/plan/category');
   }
 
@@ -53,7 +58,10 @@ export default function MomentScreen() {
             <TouchableOpacity
               key={o.key}
               style={[s.row, active && s.rowActive]}
-              onPress={() => setSelected(o.key)}
+              onPress={() => {
+                setSelected(o.key);
+                console.log('[Plan Step 3] moment_selected', { moment: o.key });
+              }}
               activeOpacity={0.85}
             >
               <Text style={s.rowEmoji}>{o.emoji}</Text>

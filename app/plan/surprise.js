@@ -7,6 +7,8 @@ import { colors, fonts, radius } from '../../constants/theme';
 import { fetchPlaceDetails, getPlacesByCategory } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
+import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
+import PaywallModal from '../../components/PaywallModal';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
@@ -21,6 +23,7 @@ export default function SurpriseActivity() {
   const [detailsVisible, setDetailsVisible] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [details, setDetails] = useState(null);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const generateActivity = useCallback(async () => {
     setLoading(true);
@@ -58,6 +61,13 @@ export default function SurpriseActivity() {
       }
 
       const selectedArea = (locationText || '').split(',')[0].trim();
+      const runGate = await consumeRunIfAvailable();
+      if (!runGate.allowed) {
+        setShowPaywall(true);
+        await minLoadingDisplaySince(startTime);
+        setLoading(false);
+        return;
+      }
 
       let places = await getPlacesByCategory('activity', { lat, lng }, {
         radius: 8000,
@@ -250,6 +260,23 @@ export default function SurpriseActivity() {
           )}
         </SafeAreaView>
       </Modal>
+
+      <PaywallModal
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onUpgrade={() => {
+          console.log('[Paywall] upgrade clicked');
+          setShowPaywall(false);
+        }}
+        onGet20MorePlans={async () => {
+          await addExtraRuns(20);
+          setShowPaywall(false);
+        }}
+        onGet50MorePlans={async () => {
+          await addExtraRuns(50);
+          setShowPaywall(false);
+        }}
+      />
     </SafeAreaView>
   );
 }

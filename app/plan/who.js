@@ -55,7 +55,12 @@ export default function WhoScreen() {
 
   function handleContinue() {
     if (!selected) return;
-    updatePlan({ group: selected, moment: null, category: null });
+    const updates = { group: selected, moment: null, category: null };
+    console.log('[Plan Step 2] committing_selection', {
+      updates,
+      nextPlanPreview: { ...plan, ...updates },
+    });
+    updatePlan(updates);
     router.push('/plan/moment');
   }
 
@@ -79,7 +84,10 @@ export default function WhoScreen() {
             <TouchableOpacity
               key={o.key}
               style={[s.card, active && s.cardActive]}
-              onPress={() => setSelected(o.key)}
+              onPress={() => {
+                setSelected(o.key);
+                console.log('[Plan Step 2] group_selected', { group: o.key });
+              }}
               activeOpacity={0.85}
             >
               <CardIllustration type={o.key} />

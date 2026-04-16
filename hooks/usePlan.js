@@ -3,6 +3,36 @@ import { SAMPLE_SAVED_PLANS, PLAN_DATA } from '../data';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PlanContext = createContext(null);
+const PLAN_FLOW_KEYS = ['location', 'coords', 'budget', 'group', 'moment', 'category', 'dateIdea'];
+const ALLOWED_CATEGORIES = new Set(['food', 'activity']);
+
+const EMPTY_PLAN = {
+  location: '',
+  coords: null,
+  budget: '$$',
+  group: null,
+  moment: null,
+  category: null,
+  dateIdea: null,
+};
+
+function normalizeCategory(category) {
+  if (typeof category !== 'string') return null;
+  return ALLOWED_CATEGORIES.has(category) ? category : null;
+}
+
+function toPlanFlowState(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    location: source.location ?? source.city ?? '',
+    coords: source.coords ?? null,
+    budget: source.budget ?? '$$',
+    group: source.group ?? null,
+    moment: source.moment ?? null,
+    category: normalizeCategory(source.category),
+    dateIdea: typeof source.dateIdea === 'string' ? source.dateIdea : null,
+  };
+}
 
 function pickRandom(arr) {
   if (!arr || arr.length === 0) return null;
@@ -23,24 +53,7 @@ function getAddonKey(hr) {
 }
 
 export function PlanProvider({ children }) {
-  const [plan, setPlan] = useState({
-    date: '',
-    dateDisplay: '',
-    city: '',
-    time: '',
-    timeDisplay: '',
-    vibe: '',
-    mode: 'manual',
-    budget: '$$',
-    activity: null,
-    food: null,
-    addonType: null,
-    addonItem: null,
-    // ── New structured flow fields ──
-    group: null,       // 'couples' | 'friends'
-    moment: null,      // e.g. 'First Date' | 'Going Out'
-    category: null,    // 'food' | 'drinks' | 'coffee' | 'activity'
-  });
+  const [plan, setPlan] = useState(EMPTY_PLAN);
 
   const [savedPlans, setSavedPlans] = useState([]);
 
@@ -52,7 +65,7 @@ export function PlanProvider({ children }) {
         try {
           const parsed = JSON.parse(data);
           if (parsed && typeof parsed === 'object') {
-            setPlan(prev => ({ ...prev, ...parsed }));
+            setPlan(toPlanFlowState(parsed));
           }
         } catch {}
       })
@@ -78,26 +91,29 @@ export function PlanProvider({ children }) {
       .catch(() => {});
   }, [plan]);
 
-  const updatePlan = (updates) => setPlan((prev) => ({ ...prev, ...updates }));
-
-  const resetPlan = () =>
-    setPlan({
-      date: '',
-      dateDisplay: '',
-      city: '',
-      time: '',
-      timeDisplay: '',
-      vibe: '',
-      mode: 'manual',
-      budget: '$$',
-      activity: null,
-      food: null,
-      addonType: null,
-      addonItem: null,
-      group: null,
-      moment: null,
-      category: null,
+  const updatePlan = (updates) =>
+    setPlan((prev) => {
+      const allowedUpdates = {};
+      PLAN_FLOW_KEYS.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(updates || {}, key)) {
+          allowedUpdates[key] = key === 'category' ? normalizeCategory(updates[key]) : updates[key];
+        }
+      });
+      if (Object.prototype.hasOwnProperty.call(allowedUpdates, 'category')) {
+        console.log('[PlanState] category set:', allowedUpdates.category);
+      }
+      if (Object.prototype.hasOwnProperty.call(allowedUpdates, 'dateIdea')) {
+        console.log('[PlanState] dateIdea set:', allowedUpdates.dateIdea);
+      }
+      const next = { ...prev, ...allowedUpdates };
+      console.log('[PlanState] updatePlan', { updates: allowedUpdates, nextPlan: next });
+      return next;
     });
+
+  const resetPlan = () => {
+    console.log('[PlanState] resetPlan', EMPTY_PLAN);
+    setPlan(EMPTY_PLAN);
+  };
 
   const generatePlan = (vibe, budget, time) => {
     const budgetKey = getBudgetKey(budget);
@@ -137,8 +153,8 @@ export function PlanProvider({ children }) {
       title:       titles[plan.vibe] || 'A Night to Remember 🌟💕',
       date:        plan.date        || '',
       dateDisplay: plan.dateDisplay || 'Upcoming',
-      city:        plan.city,
-      vibe:        plan.vibe   || 'Custom',
+      city:        plan.location || '',
+      vibe:        plan.moment   || 'Custom',
       budget:      plan.budget || '$$',
       items,
       favorite:    false,

@@ -45,7 +45,7 @@ export default function DetailsScreen() {
   const today = new Date().toISOString().split('T')[0];
 
   const [dateVal, setDateVal]         = useState(plan.date || today);
-  const [cityVal, setCityVal]         = useState(plan.city || '');
+  const [cityVal, setCityVal]         = useState(plan.location || '');
   const [timeVal, setTimeVal]         = useState(plan.time || '17:00');
   const [budget, setBudget]           = useState(plan.budget || '$$');
   const [suggestions, setSuggestions] = useState([]);
@@ -122,6 +122,7 @@ export default function DetailsScreen() {
   function onCityChange(text) {
     setCityVal(text);
     setCoords(null);
+    console.log('[Plan Step 1] location_input_changed', { location: text });
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => fetchSuggestions(text), 350);
   }
@@ -130,6 +131,7 @@ export default function DetailsScreen() {
     // ✅ Clean display name — not raw "Studio City, Los Angeles, CA, USA"
     const displayName = formatPlaceName(prediction);
     setCityVal(displayName);
+    console.log('[Plan Step 1] location_selected_from_autocomplete', { location: displayName });
     setShowDrop(false);
     setSuggestions([]);
     try {
@@ -140,6 +142,7 @@ export default function DetailsScreen() {
       if (data.results?.[0]) {
         const { lat, lng } = data.results[0].geometry.location;
         setCoords({ lat, lng });
+        console.log('[Plan Step 1] coords_selected_from_autocomplete', { coords: { lat, lng } });
       }
     } catch (e) { console.log('Geocode error:', e.message); }
   }
@@ -169,6 +172,10 @@ export default function DetailsScreen() {
           : data.results[0].formatted_address.split(',').slice(0, 2).join(',');
         setCityVal(cityName);
         setCoords({ lat: latitude, lng: longitude });
+        console.log('[Plan Step 1] location_selected_from_device', {
+          location: cityName,
+          coords: { lat: latitude, lng: longitude },
+        });
       }
     } catch (e) {
       console.log('Location error:', e.message);
@@ -210,16 +217,19 @@ export default function DetailsScreen() {
   }
 
   function handleNext() {
-    const finalDate = dateVal || today;
-    updatePlan({
-      date:        finalDate,
-      dateDisplay: formatDateDisplay(finalDate),
-      city:        cityVal,
+    const updates = {
+      location: cityVal,
       coords,
-      time:        timeVal,
-      timeDisplay: fmtTime(timeVal),
       budget,
+      group: null,
+      moment: null,
+      category: null,
+    };
+    console.log('[Plan Step 1] committing_selection', {
+      updates,
+      nextPlanPreview: { ...plan, ...updates },
     });
+    updatePlan(updates);
     router.push('/plan/who');
   }
 
@@ -349,7 +359,10 @@ export default function DetailsScreen() {
             <SelectableCard
               key={b.key}
               selected={budget === b.key}
-              onPress={() => setBudget(b.key)}
+              onPress={() => {
+                setBudget(b.key);
+                console.log('[Plan Step 1] budget_selected', { budget: b.key });
+              }}
               style={styles.budgetCard}
               innerStyle={styles.budgetCardInner}
               pressScale={0.95}

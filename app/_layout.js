@@ -44,6 +44,7 @@ export default function RootLayout() {
           <Stack.Screen name="plan/activity" />
           <Stack.Screen name="plan/food-ask" />
           <Stack.Screen name="plan/food" />
+          <Stack.Screen name="plan/dateIdea" />
           <Stack.Screen name="plan/addons" />
           <Stack.Screen name="plan/cart" />
           <Stack.Screen name="pro" />

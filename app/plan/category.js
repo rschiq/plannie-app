@@ -12,28 +12,12 @@ const CATEGORIES = [
     emoji: '🍽️',
     label: 'Food',
     sub: 'Restaurants & dining',
-    types: ['restaurant'],
-  },
-  {
-    key: 'drinks',
-    emoji: '🍸',
-    label: 'Drinks',
-    sub: 'Bars & nightlife',
-    types: ['bar', 'night_club'],
-  },
-  {
-    key: 'coffee',
-    emoji: '☕',
-    label: 'Coffee',
-    sub: 'Cafés & coffee shops',
-    types: ['cafe'],
   },
   {
     key: 'activity',
     emoji: '🎯',
     label: 'Activity',
     sub: 'Fun things to do',
-    types: ['tourist_attraction', 'amusement_center', 'bowling_alley', 'arcade'],
   },
 ];
 
@@ -45,9 +29,13 @@ export default function CategoryScreen() {
 
   function handleContinue() {
     if (!selected) return;
-    const cat = CATEGORIES.find(c => c.key === selected);
-    updatePlan({ category: selected, categoryTypes: cat?.types || [] });
-    router.push('/plan/results');
+    const updates = { category: selected, dateIdea: null };
+    console.log('[Plan Step 4] committing_selection', {
+      updates,
+      nextPlanPreview: { ...plan, ...updates },
+    });
+    updatePlan(updates);
+    router.push('/plan/dateIdea');
   }
 
   return (
@@ -69,7 +57,10 @@ export default function CategoryScreen() {
             <TouchableOpacity
               key={c.key}
               style={[s.card, active && s.cardActive]}
-              onPress={() => setSelected(c.key)}
+              onPress={() => {
+                setSelected(c.key);
+                console.log('[Plan Step 4] category_selected', { category: c.key });
+              }}
               activeOpacity={0.85}
             >
               <Text style={s.cardEmoji}>{c.emoji}</Text>
