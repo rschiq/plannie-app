@@ -26,17 +26,32 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "plannie"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "scheme": "plannie",
+    "plugins": [
+      "@react-native-google-signin/google-signin"
+    ],
     "extra": {
       "router": {},
       "eas": {
         "projectId": "07e1c212-5684-4653-aee3-21a87c89d2a6"
       }
-    },
-    "plugins": [
-      "@react-native-google-signin/google-signin"
-    ]
+    }
   }
 }
