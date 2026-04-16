@@ -645,49 +645,33 @@ export default function ResultsScreen() {
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
       const budgetFiltered = applyBudgetFilter(raw, plan.budget);
       raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
-      const LOCAL_RADIUS = 10000; // 10 km (~6 miles)
-      let localResults = raw.filter((place) => {
-        const distanceMiles = Number(place?.distanceMiles ?? place?.distance ?? 99999) || 99999;
-        const distanceMeters = distanceMiles * 1609.34;
-        return distanceMeters <= LOCAL_RADIUS;
-      });
-      console.log('[Local] radius:', LOCAL_RADIUS);
-      console.log('[Local] localResults:', localResults.length);
-      if (localResults.length >= 5) {
-        raw = localResults;
-      } else {
-        console.log('[Local] not enough local, expanding search');
-        const localIds = new Set(localResults.map((p) => p.id));
-        const nonLocal = raw.filter((p) => !localIds.has(p.id));
-        raw = [...localResults, ...nonLocal].slice(0, 20);
-      }
       const selectedArea = (plan.location || '')
         .split(',')[0]
         .trim()
         .toLowerCase();
       const inArea = raw.filter((place) => {
         const address = (place.vicinity || place.address || '').toLowerCase();
-        return selectedArea && address.includes(selectedArea);
-      });
-      const nearby = raw.filter((place) => {
-        const address = (place.vicinity || place.address || '').toLowerCase();
-        return !selectedArea || !address.includes(selectedArea);
+        return address.includes(selectedArea);
       });
       console.log('[Area] selectedArea:', selectedArea);
-      console.log('[Area] inArea:', inArea.length);
-      console.log('[Area] nearby:', nearby.length);
-      raw = inArea.length >= 5 ? inArea : [...inArea, ...nearby];
-      raw.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
+      console.log('[Area] strictMatches:', inArea.length);
+      if (inArea.length >= 5) {
+        raw = inArea;
+      } else {
+        console.log('[Area] not enough strict matches, adding nearby');
+        const inAreaIds = new Set(inArea.map((p) => p.id));
+        const nearby = raw.filter((p) => !inAreaIds.has(p.id));
+        raw = [...inArea, ...nearby];
+      }
       raw.sort((a, b) => {
-        const aDistanceMiles = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
-        const bDistanceMiles = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
-        const aLocal = (aDistanceMiles * 1609.34) <= LOCAL_RADIUS;
-        const bLocal = (bDistanceMiles * 1609.34) <= LOCAL_RADIUS;
-        if (aLocal && !bLocal) return -1;
-        if (!aLocal && bLocal) return 1;
-        return 0;
+        const scoreDiff = scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode);
+        if (scoreDiff !== 0) return scoreDiff;
+        // tie-breaker: closer distance wins
+        const aDist = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
+        const bDist = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
+        return aDist - bDist;
       });
-      console.log('[Local] finalResults:', raw.length);
+      console.log('[Area] finalResults:', raw.length);
       console.log('[BudgetFilter] budget:', plan.budget, 'after:', raw.length);
       console.log('[ResultsMode] top10AfterFilterRanking:', raw.slice(0, 10).map((p) => p.name));
 
@@ -767,49 +751,33 @@ export default function ResultsScreen() {
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
       const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
       rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
-      const LOCAL_RADIUS = 10000; // 10 km (~6 miles)
-      let localResults = rawMore.filter((place) => {
-        const distanceMiles = Number(place?.distanceMiles ?? place?.distance ?? 99999) || 99999;
-        const distanceMeters = distanceMiles * 1609.34;
-        return distanceMeters <= LOCAL_RADIUS;
-      });
-      console.log('[Local] radius:', LOCAL_RADIUS);
-      console.log('[Local] localResults:', localResults.length);
-      if (localResults.length >= 5) {
-        rawMore = localResults;
-      } else {
-        console.log('[Local] not enough local, expanding search');
-        const localIds = new Set(localResults.map((p) => p.id));
-        const nonLocal = rawMore.filter((p) => !localIds.has(p.id));
-        rawMore = [...localResults, ...nonLocal].slice(0, 20);
-      }
       const selectedArea = (plan.location || '')
         .split(',')[0]
         .trim()
         .toLowerCase();
       const inArea = rawMore.filter((place) => {
         const address = (place.vicinity || place.address || '').toLowerCase();
-        return selectedArea && address.includes(selectedArea);
-      });
-      const nearby = rawMore.filter((place) => {
-        const address = (place.vicinity || place.address || '').toLowerCase();
-        return !selectedArea || !address.includes(selectedArea);
+        return address.includes(selectedArea);
       });
       console.log('[Area] selectedArea:', selectedArea);
-      console.log('[Area] inArea:', inArea.length);
-      console.log('[Area] nearby:', nearby.length);
-      rawMore = inArea.length >= 5 ? inArea : [...inArea, ...nearby];
-      rawMore.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
+      console.log('[Area] strictMatches:', inArea.length);
+      if (inArea.length >= 5) {
+        rawMore = inArea;
+      } else {
+        console.log('[Area] not enough strict matches, adding nearby');
+        const inAreaIds = new Set(inArea.map((p) => p.id));
+        const nearby = rawMore.filter((p) => !inAreaIds.has(p.id));
+        rawMore = [...inArea, ...nearby];
+      }
       rawMore.sort((a, b) => {
-        const aDistanceMiles = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
-        const bDistanceMiles = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
-        const aLocal = (aDistanceMiles * 1609.34) <= LOCAL_RADIUS;
-        const bLocal = (bDistanceMiles * 1609.34) <= LOCAL_RADIUS;
-        if (aLocal && !bLocal) return -1;
-        if (!aLocal && bLocal) return 1;
-        return 0;
+        const scoreDiff = scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode);
+        if (scoreDiff !== 0) return scoreDiff;
+        // tie-breaker: closer distance wins
+        const aDist = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
+        const bDist = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
+        return aDist - bDist;
       });
-      console.log('[Local] finalResults:', rawMore.length);
+      console.log('[Area] finalResults:', rawMore.length);
       console.log('[BudgetFilter] budget:', plan.budget, 'after:', rawMore.length);
       console.log('[ResultsMode] top10AfterFilterRanking:', rawMore.slice(0, 10).map((p) => p.name));
 
