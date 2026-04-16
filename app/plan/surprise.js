@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
 import { fetchPlaceDetails, getPlacesByCategory } from '../../services/placesService';
+import RizzLoader from '../../components/RizzLoader';
+import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
@@ -24,6 +26,7 @@ export default function SurpriseActivity() {
     setLoading(true);
     setActivity(null);
     setNeedsLocation(false);
+    const startTime = Date.now();
 
     try {
       let lat;
@@ -41,6 +44,7 @@ export default function SurpriseActivity() {
         const geoData = await geoRes.json();
         if (geoData.status !== 'OK') {
           setNeedsLocation(true);
+          await minLoadingDisplaySince(startTime);
           setLoading(false);
           return;
         }
@@ -48,6 +52,7 @@ export default function SurpriseActivity() {
         lng = geoData.results[0].geometry.location.lng;
       } else {
         setNeedsLocation(true);
+        await minLoadingDisplaySince(startTime);
         setLoading(false);
         return;
       }
@@ -86,6 +91,7 @@ export default function SurpriseActivity() {
       console.log('[Surprise]', err);
     }
 
+    await minLoadingDisplaySince(startTime);
     setLoading(false);
   }, [plan.coords?.lat, plan.coords?.lng, plan.city, plan.location, plan.selectedArea, plan.budget]);
 
@@ -121,9 +127,8 @@ export default function SurpriseActivity() {
             <Text style={styles.backLabel}>← Back</Text>
           </TouchableOpacity>
         </View>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.gold} />
-          <Text style={styles.muted}>Finding something fun...</Text>
+        <View style={styles.loaderFlex}>
+          <RizzLoader embedded />
         </View>
       </SafeAreaView>
     );
@@ -251,6 +256,7 @@ export default function SurpriseActivity() {
 
 const styles = StyleSheet.create({
   safe:       { flex: 1, backgroundColor: colors.cream },
+  loaderFlex: { flex: 1, minHeight: 0, width: '100%' },
   topBar:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 },
   topActionBtn: { minHeight: 44, paddingHorizontal: 10, justifyContent: 'center' },
   backLabel:  { color: colors.gold, fontFamily: fonts.bodySemiBold, fontSize: 15 },

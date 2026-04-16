@@ -1,6 +1,6 @@
 // app/plan/activity.js
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
@@ -9,6 +9,8 @@ import { ACTIVITIES } from '../../data';
 import { getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
+import RizzLoader from '../../components/RizzLoader';
+import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 
 function getTag(p) {
   if (p.rating >= 4.8)                          return 'Top rated';
@@ -43,9 +45,7 @@ export default function ActivityScreen() {
 
   async function loadPlaces() {
     setLoading(true);
-
-    // Show what plan has — remove after debugging
-    // location loaded from plan.coords or geocoded from plan.city
+    const startTime = Date.now();
 
     try {
       let lat, lng;
@@ -65,11 +65,13 @@ export default function ActivityScreen() {
         } else {
           Alert.alert('Geocode Failed', `status: ${geoData.status}`);
           setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
+          await minLoadingDisplaySince(startTime);
           setLoading(false);
           return;
         }
       } else {
         setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
+        await minLoadingDisplaySince(startTime);
         setLoading(false);
         return;
       }
@@ -124,6 +126,7 @@ export default function ActivityScreen() {
           };
         });
         setItems(mapped);
+        await minLoadingDisplaySince(startTime);
         setLoading(false);
         return;
       }
@@ -131,6 +134,7 @@ export default function ActivityScreen() {
       Alert.alert('Error', e.message);
     }
     setItems(ACTIVITIES[plan.vibe] || ACTIVITIES.Romantic);
+    await minLoadingDisplaySince(startTime);
     setLoading(false);
   }
 
@@ -151,9 +155,8 @@ export default function ActivityScreen() {
       <ProgressBar total={7} current={4} />
 
       {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={colors.rose} />
-          <Text style={styles.loadingText}>Finding real spots near you…</Text>
+        <View style={styles.loaderBody}>
+          <RizzLoader embedded />
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -186,10 +189,9 @@ export default function ActivityScreen() {
 
 const styles = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.cream },
+  loaderBody:  { flex: 1, minHeight: 0, alignSelf: 'stretch' },
   scroll:      { flex: 1 },
   content:     { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
-  loader:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontFamily: fonts.body, fontSize: 14, color: colors.gray2 },
   todBanner:   { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1E1A0E', borderRadius: radius.sm, padding: 14, marginBottom: 18, borderWidth: 1, borderColor: 'rgba(201,169,110,0.3)' },
   todIcon:     { fontSize: 22 },
   todText:     { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold, flex: 1, lineHeight: 18 },

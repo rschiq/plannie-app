@@ -12,6 +12,8 @@ import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { isInArea, calcDistance } from '../../services/nearbyPlacesService';
 import { getPlacesByCategory } from '../../services/placesService';
+import RizzLoader from '../../components/RizzLoader';
+import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
@@ -307,6 +309,7 @@ export default function ResultsScreen() {
   async function fetchPlaces() {
     setLoading(true);
     setError(null);
+    const startTime = Date.now();
     try {
       // ✅ Use stored coords — set by location picker in details.js
       // Fall back to geocoding city string if coords missing
@@ -359,6 +362,7 @@ export default function ResultsScreen() {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
     }
+    await minLoadingDisplaySince(startTime);
     setLoading(false);
   }
 
@@ -567,9 +571,8 @@ export default function ResultsScreen() {
         </View>
 
         {loading ? (
-          <View style={s.center}>
-            <ActivityIndicator size="large" color={colors.rose} />
-            <Text style={s.loadingText}>Finding the best spots…</Text>
+          <View style={s.loaderBody}>
+            <RizzLoader embedded />
           </View>
         ) : error ? (
           <View style={s.center}>
@@ -759,7 +762,7 @@ const s = StyleSheet.create({
   content:     { paddingHorizontal: 20, paddingTop: 14 },
   count:       { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginBottom: 12, letterSpacing: 0.3 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  loadingText: { fontFamily: fonts.body, fontSize: 14, color: colors.gray2, marginTop: 14 },
+  loaderBody:  { flex: 1, minHeight: 0, width: '100%' },
   errorText:   { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.gray, textAlign: 'center', marginBottom: 8 },
   errorSub:    { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, textAlign: 'center', marginBottom: 20 },
   retryBtn:    { backgroundColor: colors.rose, borderRadius: 999, paddingHorizontal: 28, paddingVertical: 14 },

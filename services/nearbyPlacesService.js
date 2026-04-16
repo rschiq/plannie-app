@@ -21,9 +21,24 @@
 //   bucket independently, then combining local-first.
 // ─────────────────────────────────────────────────────────────
 
-import { activityVenueSignals } from './placesService';
-
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
+
+/** True for venues that read as retail/parks in types but are real date activities (hybrid). */
+export function activityVenueSignals(place) {
+  const name = (place.name || '').toLowerCase();
+  const types = place.types || [];
+  const hints = [
+    'bowling', 'billiard', 'pool hall', 'topgolf', 'mini golf', 'escape room',
+    'karaoke', 'axe throw', 'go kart', 'dave & buster', 'dave and buster',
+    'round 1', 'round1', 'laser tag', 'trampoline', 'skating', 'roller',
+    'comedy', 'movie theater', 'cinema', 'climbing', 'main event',
+  ];
+  if (hints.some((h) => name.includes(h))) return true;
+  if (types.includes('bowling_alley')) return true;
+  if (types.includes('movie_theater')) return true;
+  if (types.includes('amusement_center')) return true;
+  return false;
+}
 const TARGET_COUNT   = 15;
 
 const CATEGORY_TYPES = {

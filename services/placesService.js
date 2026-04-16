@@ -1,190 +1,163 @@
 // services/placesService.js
-import * as Location from 'expo-location';
+// Category search + helpers used across plan flow, cart, and results.
+import { getNearbyPlaces } from './nearbyPlacesService';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
-// Keep categories very strict
-const CATEGORY_MAP = {
-  restaurant: ['restaurant'],
-  cafe: ['cafe'],
-  drinks: ['bar', 'night_club'],
-  activity: [
-    'tourist_attraction',
-    'amusement_park',
-    'bowling_alley',
-    'movie_theater',
-    'arcade',
-  ],
-};
+const TYPE_READABLE_ORDER = [
+  'restaurant',
+  'meal_takeaway',
+  'food',
+  'bar',
+  'night_club',
+  'cafe',
+  'bakery',
+  'movie_theater',
+  'bowling_alley',
+  'tourist_attraction',
+  'amusement_park',
+  'spa',
+  'gym',
+];
 
-function normalizeCoords(coords) {
-  if (!coords) return null;
+function titleCaseType(t) {
+  return String(t)
+    .split('_')
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ''))
+    .join(' ');
+}
 
-  // supports either { lat, lng } or { latitude, longitude }
-  if (
-    typeof coords.lat === 'number' &&
-    typeof coords.lng === 'number'
-  ) {
+export function getReadableType(types = []) {
+  if (!Array.isArray(types) || types.length === 0) return 'Place';
+  for (const t of TYPE_READABLE_ORDER) {
+    if (types.includes(t)) return titleCaseType(t);
+  }
+  return titleCaseType(types[0]);
+}
+
+export function shortenVicinity(str = '') {
+  if (!str || typeof str !== 'string') return '';
+  const bits = str.split(',').map((s) => s.trim()).filter(Boolean);
+  if (bits.length <= 2) return str.trim();
+  return `${bits[0]}, ${bits[1]}`;
+}
+
+export function getCurationLabel(place, category = 'food') {
+  const raw = place.distanceMiles ?? place.distance;
+  const dist = typeof raw === 'string' ? parseFloat(raw, 10) : Number(raw);
+  const rating = place.rating != null ? Number(place.rating) : 0;
+  const reviews = place.totalRatings || 0;
+
+  if (Number.isFinite(dist) && dist < 1) {
+    if (rating >= 4.7) return 'Top pick near you';
+    if (rating >= 4.4) return 'Highly rated nearby';
+    return 'Close by';
+  }
+  if (Number.isFinite(dist) && dist < 3 && rating >= 4.5) return 'Worth the short trip';
+  if (category === 'activity' && rating >= 4.3) return 'Fun spot with great reviews';
+  if (reviews > 500) return 'Popular choice';
+  return 'Solid option for your plan';
+}
+
+function mapUiCategory(cat) {
+  const c = String(cat || 'food').toLowerCase();
+  if (['food', 'restaurant', 'dining'].includes(c)) return 'food';
+  if (c === 'drinks' || c === 'drink') return 'drinks';
+  if (c === 'coffee') return 'coffee';
+  if (c === 'activity') return 'activity';
+  return 'food';
+}
+
+/**
+ * Fetches places for a UI category using the shared nearby pipeline.
+ * @param {'food'|'drinks'|'coffee'|'activity'} category
+ * @param {{ lat: number, lng: number }} coords
+ * @param {{ radius?: number, maxResults?: number, selectedArea?: string, budget?: string }} options
+ */
+export async function getPlacesByCategory(category, coords, options = {}) {
+  const lat = coords?.lat;
+  const lng = coords?.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return [];
+
+  const selectedArea = options.selectedArea ?? '';
+  const maxResults = Math.min(Math.max(options.maxResults ?? 15, 1), 40);
+
+  const raw = await getNearbyPlaces({
+    lat,
+    lng,
+    category: mapUiCategory(category),
+    moment: 'casual_hangout',
+    areaName: selectedArea,
+  });
+
+  const mapped = raw.map((p) => {
+    const distNum = parseFloat(String(p.distance), 10);
     return {
-      lat: coords.lat,
-      lng: coords.lng,
+      id: p.id,
+      name: p.name,
+      rating: p.rating != null ? parseFloat(String(p.rating), 10) : null,
+      totalRatings: p.totalRatings || 0,
+      address: p.address || '',
+      shortLocation: shortenVicinity(p.address || ''),
+      types: p.types || [],
+      photoUrl: p.photoUrl || null,
+      location:
+        p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number'
+          ? p.location
+          : null,
+      distanceMiles: Number.isFinite(distNum) ? distNum : null,
+      isOpenNow: null,
     };
-  }
+  });
 
-  if (
-    typeof coords.latitude === 'number' &&
-    typeof coords.longitude === 'number'
-  ) {
-    return {
-      lat: coords.latitude,
-      lng: coords.longitude,
-    };
-  }
-
-  return null;
+  return mapped.filter((p) => p.location).slice(0, maxResults);
 }
 
-async function geocodeCity(city) {
-  if (!city || typeof city !== 'string') return null;
-
-  const results = await Location.geocodeAsync(city);
-
-  if (!results || !results.length) return null;
-
-  return {
-    lat: results[0].latitude,
-    lng: results[0].longitude,
-  };
-}
-
-function dedupePlaces(places) {
-  const seen = new Set();
-  const output = [];
-
-  for (const place of places) {
-    const key = place.place_id || place.name;
-    if (!seen.has(key)) {
-      seen.add(key);
-      output.push(place);
-    }
+/**
+ * Nearby search by Google types (e.g. ['restaurant']) — delegates to category pipeline.
+ */
+export async function getPlacesNearby(types, coords, options = {}) {
+  let cat = options.category;
+  if (!cat) {
+    const key = (types || []).join('|').toLowerCase();
+    if (key.includes('cafe') || key.includes('bakery')) cat = 'coffee';
+    else if (key.includes('bar') || key.includes('night_club')) cat = 'drinks';
+    else cat = 'food';
   }
-
-  return output;
-}
-
-function scorePlace(place, selectedArea) {
-  let score = 0;
-
-  score += (place.rating || 0) * 2;
-  score += (place.user_ratings_total || 0) / 1000;
-
-  const vicinity = (place.vicinity || '').toLowerCase();
-  const area = (selectedArea || '').toLowerCase();
-
-  if (area && vicinity.includes(area)) {
-    score += 5;
-  }
-
-  return score;
-}
-
-function filterByCategory(results, category) {
-  const allowedTypes = CATEGORY_MAP[category] || [];
-
-  if (!allowedTypes.length) return [];
-
-  return results.filter((place) => {
-    const types = Array.isArray(place.types) ? place.types : [];
-    return types.some((type) => allowedTypes.includes(type));
+  return getPlacesByCategory(cat, coords, {
+    radius: options.radius,
+    maxResults: options.maxResults ?? 12,
+    selectedArea: options.selectedArea ?? '',
+    budget: options.budget,
   });
 }
 
-function prioritizeArea(results, city) {
-  const selectedArea = (city || '').toLowerCase().trim();
+export async function fetchPlaceDetails(placeId) {
+  if (!placeId) return null;
+  const fields = 'name,rating,user_ratings_total,formatted_address,photos';
+  const url =
+    'https://maps.googleapis.com/maps/api/place/details/json?' +
+    `place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(fields)}&key=${GOOGLE_API_KEY}`;
 
-  if (!selectedArea) return results;
-
-  const inArea = results.filter((place) => {
-    const vicinity = (place.vicinity || '').toLowerCase();
-    const name = (place.name || '').toLowerCase();
-    return (
-      vicinity.includes(selectedArea) ||
-      name.includes(selectedArea)
-    );
-  });
-
-  const outOfArea = results.filter((place) => {
-    const vicinity = (place.vicinity || '').toLowerCase();
-    const name = (place.name || '').toLowerCase();
-    return !(
-      vicinity.includes(selectedArea) ||
-      name.includes(selectedArea)
-    );
-  });
-
-  // Always prefer local matches first, then fallback
-  return [...inArea, ...outOfArea];
-}
-
-export async function getPlaces(params) {
   try {
-    const coords = normalizeCoords(params?.coords);
-    const city = params?.city || '';
-    const category = params?.category;
+    const res = await fetch(url);
+    const data = await res.json();
+    const r = data.result;
+    if (!r) return null;
 
-    if (!category || !CATEGORY_MAP[category]) {
-      console.log('Invalid category:', category);
-      return [];
-    }
+    const photos = (r.photos || []).slice(0, 10).map(
+      (ph) =>
+        `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${ph.photo_reference}&key=${GOOGLE_API_KEY}`
+    );
 
-    let finalCoords = coords;
-
-    if (!finalCoords && city) {
-      console.log('Missing coords, geocoding city:', city);
-      finalCoords = await geocodeCity(city);
-    }
-
-    if (!finalCoords) {
-      console.log('No valid location available');
-      return [];
-    }
-
-    console.log('USING COORDS:', finalCoords);
-
-    // Google Nearby Search only supports one type param
-    // So we fetch using the first type, then filter again locally
-    const primaryType = CATEGORY_MAP[category][0];
-    const radius = 5000;
-
-    const url =
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
-      `?location=${finalCoords.lat},${finalCoords.lng}` +
-      `&radius=${radius}` +
-      `&type=${encodeURIComponent(primaryType)}` +
-      `&key=${GOOGLE_API_KEY}`;
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    const rawResults = Array.isArray(data.results) ? data.results : [];
-    console.log('RAW COUNT:', rawResults.length);
-
-    const filtered = filterByCategory(rawResults, category);
-    console.log('AFTER TYPE FILTER:', filtered.map((p) => p.name));
-
-    const prioritized = prioritizeArea(filtered, city);
-    const unique = dedupePlaces(prioritized);
-
-    unique.sort((a, b) => {
-      return scorePlace(b, city) - scorePlace(a, city);
-    });
-
-    const finalResults = unique.slice(0, 10);
-    console.log('FINAL RESULTS:', finalResults.map((p) => p.name));
-
-    return finalResults;
-  } catch (error) {
-    console.log('ERROR in getPlaces:', error);
-    return [];
+    return {
+      name: r.name,
+      rating: r.rating,
+      totalRatings: r.user_ratings_total,
+      formattedAddress: r.formatted_address,
+      photos,
+    };
+  } catch {
+    return null;
   }
 }

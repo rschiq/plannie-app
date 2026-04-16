@@ -1,6 +1,6 @@
 // app/plan/food.js
 import { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
+import { ScrollView, StyleSheet, View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
@@ -9,6 +9,8 @@ import { RESTAURANTS } from '../../data';
 import { getPlacesNearby, getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
+import RizzLoader from '../../components/RizzLoader';
+import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 
 function getTag(p) {
   if (p.rating >= 4.8)                          return 'Top rated';
@@ -43,6 +45,7 @@ export default function FoodScreen() {
 
   async function loadRestaurants() {
     setLoading(true);
+    const startTime = Date.now();
     try {
       // ✅ Use stored coords if available, geocode city as fallback
       let baseLat, baseLng;
@@ -60,11 +63,13 @@ export default function FoodScreen() {
           baseLng = geoData.results[0].geometry.location.lng;
         } else {
           setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+          await minLoadingDisplaySince(startTime);
           setLoading(false);
           return;
         }
       } else {
         setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+        await minLoadingDisplaySince(startTime);
         setLoading(false);
         return;
       }
@@ -152,6 +157,7 @@ export default function FoodScreen() {
         });
 
         setItems(mapped);
+        await minLoadingDisplaySince(startTime);
         setLoading(false);
         return;
       }
@@ -160,6 +166,7 @@ export default function FoodScreen() {
     }
 
     setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+    await minLoadingDisplaySince(startTime);
     setLoading(false);
   }
 
@@ -180,9 +187,8 @@ export default function FoodScreen() {
       <ProgressBar total={7} current={5} />
 
       {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={colors.rose} />
-          <Text style={styles.loadingText}>Finding restaurants near you…</Text>
+        <View style={styles.loaderBody}>
+          <RizzLoader embedded />
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
@@ -209,9 +215,8 @@ export default function FoodScreen() {
 
 const styles = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.cream },
+  loaderBody:  { flex: 1, minHeight: 0, alignSelf: 'stretch' },
   scroll:      { flex: 1 },
   content:     { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
-  loader:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontFamily: fonts.body, fontSize: 14, color: colors.gray2 },
   bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });
