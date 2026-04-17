@@ -1,6 +1,6 @@
 // app/plan/results.js
 // Results list + in-app detail sheet + bottom nav + save
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Image, ActivityIndicator, Linking, Modal, Dimensions, Alert,
@@ -10,7 +10,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { isInArea, calcDistance } from '../../services/nearbyPlacesService';
+import { isInArea } from '../../services/nearbyPlacesService';
 import { getPlacesNearby } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
@@ -22,7 +22,8 @@ const SCREEN_W = Dimensions.get('window').width;
 
 // ── Category config ────────────────────────────────────────────
 const CATEGORY_LABELS = {
-  activity: 'Activities',
+  activity:    'Activities',
+  hidden_gem:  'Hidden Gems',
 };
 
 const FOOD_SUBCATEGORY_CONFIG = {
@@ -55,6 +56,31 @@ const FOOD_SUBCATEGORY_CONFIG = {
   },
 };
 
+// ── Moment Profiles ───────────────────────────────────────────
+const MOMENT_PROFILES = {
+  first_date: {
+    // Intimate, low-pressure, conversation-friendly
+    boostKeywords:   ['wine', 'bistro', 'garden', 'patio', 'romantic', 'dessert', 'coffee', 'cafe', 'intimate', 'cozy', 'candlelit', 'tea'],
+    penaltyKeywords: ['sports bar', 'nightclub', 'dive bar', 'buffet', 'karaoke', 'arcade', 'bowling', 'loud'],
+    minRating: 4.2,
+    boostScore: 2.0,
+  },
+  casual_hangout: {
+    // Easy, unpretentious, approachable — the opposite of first_date and date_night
+    boostKeywords:   ['brunch', 'pizza', 'burger', 'taco', 'local', 'neighborhood', 'patio', 'casual', 'diner', 'sandwich', 'bbq'],
+    penaltyKeywords: ['fine dining', 'tasting menu', 'prix fixe', 'rooftop', 'lounge', 'speakeasy', 'cocktail bar'],
+    minRating: 3.9,
+    boostScore: 1.5,
+  },
+  date_night: {
+    // Elevated, intentional — a real night out, not just dinner
+    boostKeywords:   ['rooftop', 'cocktail', 'speakeasy', 'lounge', 'steak', 'sushi', 'wine bar', 'italian', 'view', 'upscale', 'tasting'],
+    penaltyKeywords: ['fast food', 'buffet', 'counter service', 'drive-thru', 'cafe', 'diner', 'casual', 'family restaurant'],
+    minRating: 4.3,
+    boostScore: 2.0,
+  },
+};
+
 function resolveResultsMode(category, dateIdea) {
   if (category === 'food') {
     const resolved = FOOD_SUBCATEGORY_CONFIG[dateIdea] || FOOD_SUBCATEGORY_CONFIG.brunch_dinner;
@@ -83,37 +109,36 @@ function getPlaceTypes(category, dateIdea) {
 
   if (category === 'activity') {
     switch (dateIdea) {
-      case 'fun':
-        return ['amusement_center', 'bowling_alley'];
-      case 'movies':
-        return ['movie_theater'];
-      case 'outdoor':
-        return ['park'];
-      case 'scenic':
-        return ['tourist_attraction'];
-      case 'arcade':
-        return ['amusement_center'];
-      case 'unique':
-        return ['tourist_attraction'];
-      default:
-        return ['tourist_attraction'];
+      case 'fun':        return ['amusement_center', 'bowling_alley'];
+      case 'movies':     return ['movie_theater'];
+      case 'outdoor':    return ['park'];
+      case 'hidden_gem': return ['tourist_attraction', 'amusement_center'];
+      default:           return ['tourist_attraction'];
     }
   }
 
   return [];
 }
 
-function applyBudgetFilter(results, budget) {
-  if (!results || results.length === 0) return results;
-
+function applyBudgetFilter(results, budget, dateIdea = '') {
+  if (!results?.length) return results;
   let filtered = results;
 
-  if (budget === '$$') {
-    filtered = results.filter((place) => (place.rating || 0) >= 4.0);
+  // Coffee $$ — no Starbucks
+  if (dateIdea === 'coffee_dessert' && budget === '$$') {
+    const noStar = filtered.filter(p => !(p.name || '').toLowerCase().includes('starbucks'));
+    if (noStar.length >= 3) filtered = noStar;
   }
 
-  if (budget === '$$$') {
-    filtered = results.filter((place) => (place.rating || 0) >= 4.3);
+  // Rating gates per category+budget
+  let minRating = 0;
+  if (dateIdea === 'brunch_dinner') minRating = budget === '$$' ? 4.5 : 4.3;
+  if (dateIdea === 'drinks')        minRating = budget === '$$' ? 4.5 : 4.3;
+  if (dateIdea === 'coffee_dessert' && budget === '$$') minRating = 4.2;
+
+  if (minRating > 0) {
+    const gated = filtered.filter(p => (Number(p.rating) || 0) >= minRating);
+    if (gated.length >= 3) filtered = gated;
   }
 
   return filtered;
@@ -145,69 +170,42 @@ function lightFilter(results) {
 function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
   let filtered = results || [];
 
-  // REMOVE FAST FOOD (ALL CATEGORIES)
-  filtered = filtered.filter((place) => {
-    const name = (place.name || '').toLowerCase();
-    if (
-      name.includes('mcdonald') ||
-      name.includes('burger king') ||
-      name.includes('wendy') ||
-      name.includes('jack in the box') ||
-      name.includes('kfc')
-    ) {
-      return false;
-    }
-    return true;
-  });
+  // Activity: never mix with restaurants, cafes, hotels
+  if (category === 'activity') {
+    filtered = filtered.filter(p => {
+      const t = p.types || [];
+      return !t.includes('restaurant') && !t.includes('lodging') &&
+             !t.includes('grocery_or_supermarket');
+    });
+  }
 
   if (category === 'food' && resolvedMode?.isFoodMode) {
     if (dateIdea === 'drinks') {
-      filtered = filtered.filter((place) => {
-        const types = place.types || [];
-        const name = (place.name || '').toLowerCase();
-        return (
-          types.includes('bar') ||
-          name.includes('bar') ||
-          name.includes('lounge') ||
-          name.includes('pub') ||
-          name.includes('cocktail')
-        );
+      filtered = filtered.filter(p => {
+        const t = p.types || [];
+        const n = (p.name || '').toLowerCase();
+        return t.includes('bar') || n.includes('bar') || n.includes('lounge') ||
+               n.includes('pub') || n.includes('cocktail');
       });
     }
 
     if (dateIdea === 'coffee_dessert') {
-      filtered = filtered.filter((place) => {
-        const types = place.types || [];
-        const name = (place.name || '').toLowerCase();
-        return (
-          types.includes('cafe') ||
-          types.includes('bakery') ||
-          name.includes('coffee') ||
-          name.includes('cafe') ||
-          name.includes('espresso') ||
-          name.includes('starbucks')
-        );
+      filtered = filtered.filter(p => {
+        const t = p.types || [];
+        const n = (p.name || '').toLowerCase();
+        const isCafe = t.includes('cafe') || t.includes('bakery') ||
+          ['coffee','cafe','dessert','bakery','espresso','tea','boba'].some(k => n.includes(k));
+        const isRestaurant = ['cuisine','steakhouse','grill','bbq','big boy','brasserie'].some(k => n.includes(k));
+        return isCafe && !isRestaurant;
       });
     }
 
     if (dateIdea === 'brunch_dinner') {
-      filtered = filtered.filter((place) => {
-        const types = place.types || [];
-        const name = (place.name || '').toLowerCase();
-
-        // remove fast food and low-effort places
-        if (
-          name.includes('mcdonald') ||
-          name.includes('burger king') ||
-          name.includes('wendy') ||
-          name.includes('jack in the box') ||
-          name.includes('in-n-out') ||
-          name.includes("bob's big boy")
-        ) {
-          return false;
-        }
-
-        return types.includes('restaurant');
+      filtered = filtered.filter(p => {
+        const t = p.types || [];
+        const n = (p.name || '').toLowerCase();
+        if (['mcdonald','burger king','wendy','jack in the box','in-n-out',"bob's big boy"].some(k => n.includes(k))) return false;
+        return t.includes('restaurant');
       });
     }
   }
@@ -215,82 +213,114 @@ function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
   return filtered;
 }
 
-function scorePlace(place, dateIdea, resolvedMode) {
-  const rating = Number(place?.rating || 0);
+function scorePlace(place, plan, resolvedMode) {
+  const rating  = Number(place?.rating || 0);
   const reviews = Number(place?.user_ratings_total || place?.totalRatings || 0);
-  const distanceRaw = place?.distanceMiles ?? place?.distance ?? 0;
-  const distance = Number(distanceRaw) || 0;
+  const name    = (place.name || '').toLowerCase();
 
-  let score = rating + (reviews / 1000);
-  // Penalize distance
-  score -= distance * 0.5;
+  // Base: rating × log10(reviews+1) — wide separation between quality tiers
+  let score = rating * Math.log10(reviews + 1);
 
-  const name = (place.name || '').toLowerCase();
-  const types = place.types || [];
-
-  // Penalize bad fast food
-  if (
-    name.includes('mcdonald') ||
-    name.includes('burger king') ||
-    name.includes('wendy') ||
-    name.includes('jack in the box')
-  ) {
-    score -= 2;
+  // Moment profile boosts / penalties
+  const profile = MOMENT_PROFILES[plan?.moment];
+  if (profile) {
+    if (profile.boostKeywords.some(k => name.includes(k)))   score += profile.boostScore;
+    if (profile.penaltyKeywords.some(k => name.includes(k))) score -= profile.boostScore;
   }
 
-  // Slight penalty for casual chains
-  if (
-    name.includes('in-n-out') ||
-    name.includes("bob's big boy")
-  ) {
-    score -= 1;
-  }
-
-  // BOOST Starbucks (IMPORTANT)
-  if (name.includes('starbucks')) {
-    score += 0.3;
-  }
-
-  // Boost cafes slightly
-  if (
-    name.includes('cafe') ||
-    name.includes('coffee')
-  ) {
-    score += 0.3;
-  }
-
+  // Category mode keyword boosts
   if (resolvedMode?.isFoodMode) {
-    const boosts = resolvedMode.rankingBoostKeywords || [];
-    const boostHits = boosts.filter((word) => name.includes(word)).length;
-    score += boostHits * 0.2;
-
-    if (resolvedMode.mode === 'coffee_dessert' && name.includes('starbucks')) {
-      score -= 0.15;
-    }
+    const hits = (resolvedMode.rankingBoostKeywords || []).filter(w => name.includes(w)).length;
+    score += hits * 0.3;
   }
 
-  if (dateIdea === 'arcade') {
-    if (
-      name.includes('arcade') ||
-      name.includes('game') ||
-      name.includes('bowling')
-    ) {
-      score += 1;
-    }
-
-    if (
-      name.includes('universal') ||
-      name.includes('hotel')
-    ) {
-      score -= 2;
-    }
-  }
+  // Chain penalties
+  if (['in-n-out', "bob's big boy"].some(k => name.includes(k))) score -= 2;
 
   return score;
 }
 
-// ── Activity: all search passes with subtype tags ─────────────
-// Each entry has: type (Google Places type), keyword, tag (subtype bucket)
+function getDistanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (v) => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const BLOCK_LIST = [
+  'walmart','target','costco','home depot','best buy','gamestop',
+  'dollar tree','dollar general','marshalls','ross ','five below',
+  'walgreens','cvs','rite aid','dollar store','whole foods','ralphs','pavilions','safeway','vons',
+  'liquor store','gas station',
+  'gym','fitness center','crossfit','ymca','planet fitness','orangetheory',
+  'hospital','urgent care','clinic','dental','pharmacy',
+  'school','church','storage','auto repair','car wash',
+  'trampoline','sky zone','urban air','bounce','chuck e cheese',
+  'hard rock cafe','cheesecake factory','buffalo wild wings',
+  "applebee's","chili's",'olive garden','ihop',"denny's",
+  "bob's big boy",'cracker barrel','red lobster','outback steakhouse','hooters',
+  'mcdonald','burger king','wendy','jack in the box','kfc','taco bell',
+];
+
+function isBlockedPlace(place) {
+  const name  = (place.name || '').toLowerCase();
+  const types = place.types || [];
+  if (BLOCK_LIST.some(k => name.includes(k))) return true;
+  if (types.includes('grocery_or_supermarket') || types.includes('supermarket')) return true;
+  if (types.includes('department_store') || types.includes('shopping_mall')) return true;
+  if (types.includes('lodging')) return true;
+  return false;
+}
+
+function getCuisine(types = [], name = '') {
+  const n = name.toLowerCase();
+  if (n.includes('sushi') || n.includes('japanese')) return 'Japanese';
+  if (n.includes('italian'))                          return 'Italian';
+  if (n.includes('mexican') || n.includes('taco'))   return 'Mexican';
+  if (n.includes('chinese'))                          return 'Chinese';
+  if (n.includes('thai'))                             return 'Thai';
+  if (n.includes('indian'))                           return 'Indian';
+  if (n.includes('korean'))                           return 'Korean';
+  if (n.includes('french'))                           return 'French';
+  if (n.includes('steak') || n.includes('steakhouse')) return 'Steakhouse';
+  if (n.includes('pizza'))                            return 'Pizza';
+  if (n.includes('bbq') || n.includes('barbecue'))   return 'BBQ';
+  if (n.includes('coffee') || n.includes('cafe'))    return 'Cafe';
+  if (n.includes('bar') || n.includes('pub'))        return 'Bar';
+  if (types.includes('restaurant'))  return 'Restaurant';
+  if (types.includes('cafe'))        return 'Cafe';
+  if (types.includes('bar'))         return 'Bar';
+  if (types.includes('bakery'))      return 'Bakery';
+  return null;
+}
+
+function curateResults(raw, plan, resolvedMode, lat, lng) {
+  const profile = MOMENT_PROFILES[plan?.moment];
+
+  // Soft minRating gate — only tighten if enough results survive
+  if (profile?.minRating) {
+    const qualified = raw.filter(p => (Number(p.rating) || 0) >= profile.minRating);
+    if (qualified.length >= 5) raw = qualified;
+  }
+
+  raw.sort((a, b) => {
+    const diff = scorePlace(b, plan, resolvedMode) - scorePlace(a, plan, resolvedMode);
+    if (diff !== 0) return diff;
+    return getDistanceMeters(lat, lng, a.location?.lat, a.location?.lng) -
+           getDistanceMeters(lat, lng, b.location?.lat, b.location?.lng);
+  });
+
+  console.log('[Curator] moment:', plan?.moment,
+    'top5:', raw.slice(0, 5).map(p => `${p.name}(${p.rating})`));
+
+  return raw.slice(0, 5);
+}
+
 function buildPhotoUrl(ref, maxW = 400) {
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxW}&photoreference=${ref}&key=${GOOGLE_API_KEY}`;
 }
@@ -318,7 +348,7 @@ function PlaceDetailSheet({ place, visible, onClose, onSave, isSaved }) {
   async function fetchFullDetails(placeId) {
     setDetLoad(true);
     try {
-      const fields = 'name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos';
+      const fields = 'name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos,opening_hours,reviews';
       const res  = await fetch(
         `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${GOOGLE_API_KEY}`
       );
@@ -403,6 +433,29 @@ function PlaceDetailSheet({ place, visible, onClose, onSave, isSaved }) {
               </View>
             ) : null}
 
+            {/* Hours today */}
+            {details?.opening_hours?.weekday_text?.length > 0 && (() => {
+              const day = new Date().getDay();
+              const idx = day === 0 ? 6 : day - 1;
+              const todayLine = details.opening_hours.weekday_text[idx];
+              return todayLine ? (
+                <View style={det.row}>
+                  <Text style={det.rowIcon}>🕐</Text>
+                  <Text style={det.rowText}>{todayLine}</Text>
+                </View>
+              ) : null;
+            })()}
+
+            {/* Top review snippet */}
+            {details?.reviews?.[0]?.text ? (
+              <View style={[det.row, { marginTop: 4 }]}>
+                <Text style={det.rowIcon}>💬</Text>
+                <Text style={[det.rowText, { fontStyle: 'italic' }]} numberOfLines={4}>
+                  "{details.reviews[0].text}"
+                </Text>
+              </View>
+            ) : null}
+
             {/* Phone */}
             {phone ? (
               <TouchableOpacity style={det.row} onPress={() => Linking.openURL(`tel:${phone}`)}>
@@ -483,6 +536,7 @@ const det = StyleSheet.create({
 // ── Place Card ─────────────────────────────────────────────────
 function PlaceCard({ place, onPress, variant = 'default' }) {
   const isTopPick = variant === 'top';
+  const priceStr  = place.priceLevel != null ? '$'.repeat(place.priceLevel + 1) : null;
   return (
     <TouchableOpacity
       style={[card.wrap, isTopPick && card.wrapTop]}
@@ -495,13 +549,26 @@ function PlaceCard({ place, onPress, variant = 'default' }) {
         <View style={card.photoPlaceholder}><Text style={card.photoIcon}>📍</Text></View>
       )}
       <View style={card.body}>
-        <Text style={card.name} numberOfLines={1}>{place.name}</Text>
+        <View style={card.titleRow}>
+          <Text style={card.name} numberOfLines={1}>{place.name}</Text>
+          {priceStr && <Text style={card.price}>{priceStr}</Text>}
+        </View>
         <View style={card.metaRow}>
-          {place.rating    && <Text style={card.rating}>⭐ {place.rating}</Text>}
+          {place.rating && <Text style={card.rating}>⭐ {place.rating}</Text>}
           {place.totalRatings > 0 && <Text style={card.reviews}>({place.totalRatings.toLocaleString()})</Text>}
-          {place.distance  && <Text style={card.distance}>🚗 {place.distance} mi</Text>}
+          {place.cuisine && <Text style={card.cuisine}>{place.cuisine}</Text>}
+          {place.distance && <Text style={card.distance}>🚗 {place.distance} mi</Text>}
+          {place.openNow != null && (
+            <Text style={[card.openTag, place.openNow ? card.openNow : card.closedNow]}>
+              {place.openNow ? 'Open' : 'Closed'}
+            </Text>
+          )}
         </View>
         {place.address ? <Text style={card.address} numberOfLines={1}>📍 {place.address}</Text> : null}
+        {place.hoursToday ? <Text style={card.hours} numberOfLines={1}>🕐 {place.hoursToday}</Text> : null}
+        {place.reviewSnippet ? (
+          <Text style={card.review} numberOfLines={2}>"{place.reviewSnippet}"</Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -519,12 +586,20 @@ const card = StyleSheet.create({
   photoPlaceholder: { width: '100%', height: 180, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
   photoIcon: { fontSize: 28 },
   body:  { padding: 14 },
-  name:  { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, marginBottom: 6 },
+  name:  { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, flex: 1, marginRight: 6 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 3, flexWrap: 'wrap' },
   rating:   { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
   reviews:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
   distance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
   address:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  titleRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  price:     { fontFamily: fonts.body, fontSize: 12, color: colors.gold },
+  cuisine:   { fontFamily: fonts.body, fontSize: 12, color: colors.rose, backgroundColor: 'rgba(212,149,111,0.10)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  openTag:   { fontFamily: fonts.body, fontSize: 11, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  openNow:   { color: '#3d9970', backgroundColor: 'rgba(61,153,112,0.10)' },
+  closedNow: { color: colors.gray2, backgroundColor: colors.gray4 },
+  hours:     { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 2 },
+  review:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 4, fontStyle: 'italic', lineHeight: 15 },
 });
 
 // ── Bottom Nav ─────────────────────────────────────────────────
@@ -576,6 +651,8 @@ export default function ResultsScreen() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchSelected, setSearchSelected] = useState(null);
   const [showPaywall, setShowPaywall] = useState(false);
+
+  const enrichedRef = useRef(new Set());
 
   const category = plan.category || 'food';
   const resolvedMode = resolveResultsMode(category, plan.dateIdea);
@@ -643,58 +720,53 @@ export default function ResultsScreen() {
       raw = applyCategoryFilter(raw, plan.dateIdea, resolvedMode, plan.category);
       const beforeBudgetFilterCount = raw.length;
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(raw, plan.budget);
+      const budgetFiltered = applyBudgetFilter(raw, plan.budget, plan.dateIdea);
       raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
-      const selectedArea = (plan.location || '')
-        .split(',')[0]
-        .trim()
-        .toLowerCase();
-      const inArea = raw.filter((place) => {
-        const address = (place.vicinity || place.address || '').toLowerCase();
-        return address.includes(selectedArea);
-      });
-      console.log('[Area] selectedArea:', selectedArea);
-      console.log('[Area] strictMatches:', inArea.length);
-      if (inArea.length >= 5) {
-        raw = inArea;
-      } else {
-        console.log('[Area] not enough strict matches, adding nearby');
-        const inAreaIds = new Set(inArea.map((p) => p.id));
-        const nearby = raw.filter((p) => !inAreaIds.has(p.id));
-        raw = [...inArea, ...nearby];
-      }
-      raw.sort((a, b) => {
-        const scoreDiff = scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode);
-        if (scoreDiff !== 0) return scoreDiff;
-        // tie-breaker: closer distance wins
-        const aDist = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
-        const bDist = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
-        return aDist - bDist;
-      });
-      console.log('[Area] finalResults:', raw.length);
-      console.log('[BudgetFilter] budget:', plan.budget, 'after:', raw.length);
-      console.log('[ResultsMode] top10AfterFilterRanking:', raw.slice(0, 10).map((p) => p.name));
+      const LOCAL_RADIUS = 6437;
+      const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
 
-      const mapped = raw.map((p) => {
-        const dist = p.distanceMiles ?? calcDistance({ lat, lng }, p.location);
-        const placeForArea = { vicinity: p.address, formatted_address: p.address };
+      const inArea  = raw.filter(p => (p.address || '').toLowerCase().includes(selectedArea));
+      const nearby  = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= LOCAL_RADIUS);
+
+      console.log('[Area] selected:', selectedArea);
+      console.log('[Area] inArea:', inArea.length);
+      console.log('[Area] nearby:', nearby.length);
+
+      if (inArea.length >= 5)       raw = inArea;
+      else if (nearby.length >= 5)  raw = nearby;
+      // else keep all raw results as fallback
+
+      raw = raw.filter(p => !isBlockedPlace(p));
+      console.log('[Block] passed:', raw.length);
+
+      const curated   = curateResults(raw, plan, resolvedMode, lat, lng);
+      const inAreaIds = new Set(inArea.map(p => p.id));
+      const mapped    = curated.map((p) => {
+        const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
+        const distMiles  = distMeters / 1609.34;
+        console.log('[Distance]', p.name, distMeters);
         return {
           id:           p.id,
           name:         p.name,
           rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
           totalRatings: p.totalRatings || 0,
           address:      p.address || '',
-          distance:     dist.toFixed(1),
-          inArea:       isInArea(placeForArea, areaName),
-          isExpanded:   !isInArea(placeForArea, areaName),
+          distance:     distMiles.toFixed(1),
+          inArea:       inAreaIds.has(p.id),
+          isExpanded:   !inAreaIds.has(p.id),
           types:        p.types || [],
           photoUrl:     p.photoUrl,
           location:     p.location,
+          priceLevel:     p.priceLevel ?? null,
+          openNow:        p.isOpenNow ?? null,
+          cuisine:        getCuisine(p.types || [], p.name || ''),
+          reviewSnippet:  null,
+          hoursToday:     null,
         };
       });
 
-      mapped.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
-      setPlaces(mapped.slice(0, 20));
+      setPlaces(mapped);
+      enrichTopPlaces(mapped);
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
@@ -707,6 +779,32 @@ export default function ResultsScreen() {
   function openDetail(place) {
     setSelected(place);
     setShowDetail(true);
+  }
+
+  async function enrichTopPlaces(topPlaces) {
+    const toEnrich = (topPlaces || []).filter(p => p.id && !enrichedRef.current.has(p.id));
+    for (const place of toEnrich) {
+      enrichedRef.current.add(place.id);
+      try {
+        const fields = 'opening_hours,reviews,price_level,formatted_address';
+        const res = await fetch(
+          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.id}&fields=${encodeURIComponent(fields)}&key=${GOOGLE_API_KEY}`
+        );
+        const data = await res.json();
+        if (!data.result) continue;
+        const r = data.result;
+        const day = new Date().getDay();
+        const idx = day === 0 ? 6 : day - 1;
+        setPlaces(prev => prev.map(p => p.id !== place.id ? p : {
+          ...p,
+          openNow:       r.opening_hours?.open_now ?? p.openNow,
+          hoursToday:    r.opening_hours?.weekday_text?.[idx] || p.hoursToday,
+          reviewSnippet: r.reviews?.[0]?.text?.slice(0, 150) || p.reviewSnippet,
+          fullAddress:   r.formatted_address || p.address,
+          priceLevel:    r.price_level ?? p.priceLevel,
+        }));
+      } catch {}
+    }
   }
 
   // ── Expand search to nearby areas ────────────────────────────
@@ -749,64 +847,53 @@ export default function ResultsScreen() {
       rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
       const beforeBudgetFilterCount = rawMore.length;
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
+      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget, plan.dateIdea);
       rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
-      const selectedArea = (plan.location || '')
-        .split(',')[0]
-        .trim()
-        .toLowerCase();
-      const inArea = rawMore.filter((place) => {
-        const address = (place.vicinity || place.address || '').toLowerCase();
-        return address.includes(selectedArea);
-      });
-      console.log('[Area] selectedArea:', selectedArea);
-      console.log('[Area] strictMatches:', inArea.length);
-      if (inArea.length >= 5) {
-        rawMore = inArea;
-      } else {
-        console.log('[Area] not enough strict matches, adding nearby');
-        const inAreaIds = new Set(inArea.map((p) => p.id));
-        const nearby = rawMore.filter((p) => !inAreaIds.has(p.id));
-        rawMore = [...inArea, ...nearby];
-      }
-      rawMore.sort((a, b) => {
-        const scoreDiff = scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode);
-        if (scoreDiff !== 0) return scoreDiff;
-        // tie-breaker: closer distance wins
-        const aDist = Number(a?.distanceMiles ?? a?.distance ?? 99999) || 99999;
-        const bDist = Number(b?.distanceMiles ?? b?.distance ?? 99999) || 99999;
-        return aDist - bDist;
-      });
-      console.log('[Area] finalResults:', rawMore.length);
-      console.log('[BudgetFilter] budget:', plan.budget, 'after:', rawMore.length);
-      console.log('[ResultsMode] top10AfterFilterRanking:', rawMore.slice(0, 10).map((p) => p.name));
+      const LOCAL_RADIUS = 6437;
+      const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
 
-      const moreResults = rawMore
+      const inArea  = rawMore.filter(p => (p.address || '').toLowerCase().includes(selectedArea));
+      const nearby  = rawMore.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= LOCAL_RADIUS);
+
+      console.log('[Area] selected:', selectedArea);
+      console.log('[Area] inArea:', inArea.length);
+      console.log('[Area] nearby:', nearby.length);
+
+      if (inArea.length >= 5)       rawMore = inArea;
+      else if (nearby.length >= 5)  rawMore = nearby;
+
+      rawMore = rawMore.filter(p => !isBlockedPlace(p));
+      console.log('[Block] expand passed:', rawMore.length);
+
+      const curatedMore = curateResults(rawMore, plan, resolvedMode, lat, lng);
+      const inAreaIds   = new Set(inArea.map(p => p.id));
+      const moreResults = curatedMore
         .filter(p => !existingIds.has(p.id))
         .map((p) => {
-          const dist = p.distanceMiles ?? calcDistance({ lat, lng }, p.location);
-          const placeForArea = { vicinity: p.address, formatted_address: p.address };
+          const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
+          const distMiles  = distMeters / 1609.34;
+          console.log('[Distance]', p.name, distMeters);
           return {
             id:           p.id,
             name:         p.name,
             rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
             totalRatings: p.totalRatings || 0,
             address:      p.address || '',
-            distance:     dist.toFixed(1),
-            inArea:       isInArea(placeForArea, areaName),
-            isExpanded:   true,
+            distance:     distMiles.toFixed(1),
+            inArea:       inAreaIds.has(p.id),
+            isExpanded:   !inAreaIds.has(p.id),
             types:        p.types || [],
             photoUrl:     p.photoUrl,
             location:     p.location,
+            priceLevel:     p.priceLevel ?? null,
+            openNow:        p.isOpenNow ?? null,
+            cuisine:        getCuisine(p.types || [], p.name || ''),
+            reviewSnippet:  null,
+            hoursToday:     null,
           };
-        })
-        .slice(0, 15);
+        });
 
-      setPlaces(prev => {
-        const combined = [...prev, ...moreResults];
-        combined.sort((a, b) => scorePlace(b, plan.dateIdea, resolvedMode) - scorePlace(a, plan.dateIdea, resolvedMode));
-        return combined;
-      });
+      setPlaces(prev => [...prev, ...moreResults]);
       setExpanded(true);
     } catch (e) {
       console.log('[Results] expand error:', e.message);
@@ -870,7 +957,8 @@ export default function ResultsScreen() {
       const mapped = raw
         .filter(p => (p.rating ?? 0) >= 3.5)
         .map(p => {
-          const dist = calcDistance({ lat, lng }, p.geometry?.location);
+          const distMeters = getDistanceMeters(lat, lng, p.geometry?.location?.lat ?? 0, p.geometry?.location?.lng ?? 0);
+          const dist = distMeters / 1609.34;
           return {
             id:           p.place_id,
             name:         p.name,

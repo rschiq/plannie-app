@@ -178,6 +178,7 @@ export async function getPlacesNearby(types, coords, options = {}) {
             location,
             distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : null,
             isOpenNow: p.opening_hours?.open_now ?? null,
+            priceLevel: p.price_level ?? null,
           });
         });
       } catch {
@@ -202,7 +203,7 @@ export async function getPlacesNearby(types, coords, options = {}) {
 
 export async function fetchPlaceDetails(placeId) {
   if (!placeId) return null;
-  const fields = 'name,rating,user_ratings_total,formatted_address,photos';
+  const fields = 'name,rating,user_ratings_total,formatted_address,photos,opening_hours,reviews,price_level';
   const url =
     'https://maps.googleapis.com/maps/api/place/details/json?' +
     `place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(fields)}&key=${GOOGLE_API_KEY}`;
@@ -224,6 +225,16 @@ export async function fetchPlaceDetails(placeId) {
       totalRatings: r.user_ratings_total,
       formattedAddress: r.formatted_address,
       photos,
+      openNow:       r.opening_hours?.open_now ?? null,
+      hoursToday:    (() => {
+        const wt = r.opening_hours?.weekday_text;
+        if (!wt?.length) return null;
+        const day = new Date().getDay();
+        const idx = day === 0 ? 6 : day - 1;
+        return wt[idx] || null;
+      })(),
+      reviewSnippet: r.reviews?.[0]?.text?.slice(0, 150) || null,
+      priceLevel:    r.price_level ?? null,
     };
   } catch {
     return null;
