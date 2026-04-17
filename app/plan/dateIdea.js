@@ -11,12 +11,10 @@ const OPTIONS_BY_CATEGORY = {
     { key: 'drinks', label: 'Drinks', emoji: '🍸' },
   ],
   activity: [
-    { key: 'fun', label: 'Fun', emoji: '🎉' },
-    { key: 'movies', label: 'Movies', emoji: '🎬' },
-    { key: 'outdoor', label: 'Outdoor', emoji: '🌤️' },
-    { key: 'scenic', label: 'Scenic', emoji: '🌅' },
-    { key: 'arcade', label: 'Arcade', emoji: '🕹️' },
-    { key: 'unique', label: 'Unique', emoji: '🧩' },
+    { key: 'fun',        label: 'Fun',        emoji: '🎉' },
+    { key: 'movies',     label: 'Movies',     emoji: '🎬' },
+    { key: 'outdoor',    label: 'Outdoor',    emoji: '🌤️' },
+    { key: 'hidden_gem', label: 'Hidden Gem', emoji: '🧩' },
   ],
 };
 

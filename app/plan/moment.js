@@ -8,15 +8,13 @@ import { colors, fonts, radius } from '../../constants/theme';
 
 const MOMENTS = {
   couples: [
-    { key: 'first_date',        emoji: '🌹', label: 'First Date',       sub: 'Make a great first impression'  },
-    { key: 'casual_hangout',    emoji: '😊', label: 'Casual Hangout',   sub: 'Low-key, easy and fun'          },
-    { key: 'date_night',        emoji: '🌙', label: 'Date Night',       sub: 'A proper night out together'    },
-    { key: 'special_occasion',  emoji: '✨', label: 'Special Occasion', sub: 'Anniversary, birthday, big day' },
+    { key: 'first_date',     emoji: '🌹', label: 'First Date',     sub: 'Make a great first impression' },
+    { key: 'casual_hangout', emoji: '😊', label: 'Casual Hangout', sub: 'Low-key, easy and fun'         },
+    { key: 'date_night',     emoji: '🌙', label: 'Date Night',     sub: 'A proper night out together'   },
   ],
   friends: [
-    { key: 'chill',     emoji: '😌', label: 'Chill',           sub: 'Relaxed and laid-back'         },
-    { key: 'going_out', emoji: '🎉', label: 'Going Out',       sub: 'Night out with the crew'       },
-    { key: 'activity',  emoji: '🏃', label: 'Activity / Fun',  sub: 'Active, exciting, competitive' },
+    { key: 'casual_hangout', emoji: '😌', label: 'Chill',      sub: 'Relaxed and laid-back'   },
+    { key: 'date_night',     emoji: '🎉', label: 'Going Out',  sub: 'Night out with the crew' },
   ],
 };
 

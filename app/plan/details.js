@@ -16,9 +16,8 @@ import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 const BUDGETS = [
-  { key: '$',   label: 'Keep It Simple', desc: 'Great dates on a budget', emoji: '💚' },
-  { key: '$$',  label: 'Nice Night Out',  desc: 'A nice night out',        emoji: '💛' },
-  { key: '$$$', label: 'Go All Out',      desc: 'Pull out all the stops',  emoji: '❤️' },
+  { key: '$',  label: 'Low Budget',    desc: 'Great dates on a budget', emoji: '💚' },
+  { key: '$$', label: 'Nice Night Out', desc: 'A nice night out',        emoji: '💛' },
 ];
 
 function TapCard({ onPress, selected, children, style }) {

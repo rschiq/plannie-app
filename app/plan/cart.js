@@ -968,7 +968,7 @@ export default function CartScreen() {
   if (plan.activity) whyBullets.push(`✦ ${plan.activity.name} is highly rated and fits the mood`);
   if (plan.food)     whyBullets.push(`✦ ${plan.food.name} pairs perfectly as a follow-up`);
   if (plan.addonItem)whyBullets.push(`✦ ${plan.addonItem.name} rounds out the night beautifully`);
-  if (plan.budget === '$$$') whyBullets.push('✦ Premium picks selected for a special night out');
+  if (plan.budget === '$$') whyBullets.push('✦ Premium picks selected for a special night out');
   else if (plan.budget === '$') whyBullets.push('✦ Great value spots — quality without overspending');
 
   function removeItem(key) {

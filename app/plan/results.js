@@ -21,9 +21,11 @@ const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
 
 // ── Category config ────────────────────────────────────────────
-const CATEGORY_LABELS = {
-  activity:    'Activities',
-  hidden_gem:  'Hidden Gems',
+const ACTIVITY_TITLES = {
+  fun:        'Fun',
+  movies:     'Movies',
+  outdoor:    'Outdoor',
+  hidden_gem: 'Hidden Gems',
 };
 
 const FOOD_SUBCATEGORY_CONFIG = {
@@ -92,7 +94,7 @@ function resolveResultsMode(category, dateIdea) {
 
   return {
     mode: category || 'activity',
-    displayTitle: CATEGORY_LABELS[category] || 'Places',
+    displayTitle: category === 'activity' ? (ACTIVITY_TITLES[dateIdea] || 'Activities') : 'Places',
     fetchTypes: getPlaceTypes(category, dateIdea),
     includeKeywords: [],
     excludeKeywords: [],
@@ -112,7 +114,6 @@ function getPlaceTypes(category, dateIdea) {
       case 'fun':        return ['amusement_center', 'bowling_alley'];
       case 'movies':     return ['movie_theater'];
       case 'outdoor':    return ['park'];
-      case 'hidden_gem': return ['tourist_attraction', 'amusement_center'];
       default:           return ['tourist_attraction'];
     }
   }
@@ -120,28 +121,21 @@ function getPlaceTypes(category, dateIdea) {
   return [];
 }
 
-function applyBudgetFilter(results, budget, dateIdea = '') {
-  if (!results?.length) return results;
-  let filtered = results;
+function applyBudgetFilter(results, budget) {
+  if (!results?.length || !budget) return results;
 
-  // Coffee $$ — no Starbucks
-  if (dateIdea === 'coffee_dessert' && budget === '$$') {
-    const noStar = filtered.filter(p => !(p.name || '').toLowerCase().includes('starbucks'));
-    if (noStar.length >= 3) filtered = noStar;
-  }
+  // $ → price_level 0,1,2  |  $$ → price_level 3,4
+  const allowedLevels = budget === '$' ? [0, 1, 2] : [3, 4];
 
-  // Rating gates per category+budget
-  let minRating = 0;
-  if (dateIdea === 'brunch_dinner') minRating = budget === '$$' ? 4.5 : 4.3;
-  if (dateIdea === 'drinks')        minRating = budget === '$$' ? 4.5 : 4.3;
-  if (dateIdea === 'coffee_dessert' && budget === '$$') minRating = 4.2;
+  const byPrice = results.filter(p => {
+    const level = p.priceLevel;
+    if (level == null) return (Number(p.rating) || 0) >= 4.5;
+    return allowedLevels.includes(level);
+  });
 
-  if (minRating > 0) {
-    const gated = filtered.filter(p => (Number(p.rating) || 0) >= minRating);
-    if (gated.length >= 3) filtered = gated;
-  }
-
-  return filtered;
+  const final = byPrice.length >= 0 ? byPrice : results;
+  console.log('[BudgetFilter] after:', final.length);
+  return final;
 }
 
 function lightFilter(results) {
@@ -176,6 +170,18 @@ function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
       const t = p.types || [];
       return !t.includes('restaurant') && !t.includes('lodging') &&
              !t.includes('grocery_or_supermarket');
+    });
+  }
+
+  // Movies: require movie_theater type, exclude non-cinemas
+  if (dateIdea === 'movies') {
+    const MOVIES_JUNK = ['home theater', 'installation', 'repair', 'security'];
+    filtered = filtered.filter(p => {
+      const t = p.types || [];
+      const n = (p.name || '').toLowerCase();
+      if (!t.includes('movie_theater')) return false;
+      if (MOVIES_JUNK.some(k => n.includes(k))) return false;
+      return true;
     });
   }
 
@@ -640,6 +646,7 @@ export default function ResultsScreen() {
   const [places,     setPlaces]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
+  const [comingSoon, setComingSoon] = useState(false);
   const [selected,   setSelected]   = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [savedIds,   setSavedIds]   = useState(new Set());
@@ -670,6 +677,11 @@ export default function ResultsScreen() {
 
   // ── Fetch using nearbyPlacesService ─────────────────────────
   async function fetchPlaces() {
+    if (plan.dateIdea === 'hidden_gem') {
+      setComingSoon(true);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const startTime = Date.now();
@@ -720,7 +732,7 @@ export default function ResultsScreen() {
       raw = applyCategoryFilter(raw, plan.dateIdea, resolvedMode, plan.category);
       const beforeBudgetFilterCount = raw.length;
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(raw, plan.budget, plan.dateIdea);
+      const budgetFiltered = applyBudgetFilter(raw, plan.budget);
       raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
       const LOCAL_RADIUS = 6437;
       const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
@@ -738,6 +750,11 @@ export default function ResultsScreen() {
 
       raw = raw.filter(p => !isBlockedPlace(p));
       console.log('[Block] passed:', raw.length);
+
+      const MAX_DISTANCE = 6400;
+      const withinRange = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= MAX_DISTANCE);
+      if (withinRange.length >= 5) raw = withinRange;
+      console.log('[Distance] within 4mi:', withinRange.length, '→ using:', raw.length);
 
       const curated   = curateResults(raw, plan, resolvedMode, lat, lng);
       const inAreaIds = new Set(inArea.map(p => p.id));
@@ -847,7 +864,7 @@ export default function ResultsScreen() {
       rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
       const beforeBudgetFilterCount = rawMore.length;
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget, plan.dateIdea);
+      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
       rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
       const LOCAL_RADIUS = 6437;
       const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
@@ -1041,7 +1058,15 @@ export default function ResultsScreen() {
           <Text style={s.sub}>Near {locationLabel || 'your location'} · sorted by rating</Text>
         </View>
 
-        {loading ? (
+        {comingSoon ? (
+          <View style={s.center}>
+            <Text style={s.errorText}>🧩 Hidden Gems coming soon</Text>
+            <Text style={s.errorSub}>We're curating something special. Check back soon!</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={() => router.back()} activeOpacity={0.8}>
+              <Text style={s.retryBtnText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        ) : loading ? (
           <View style={s.loaderBody}>
             <RizzLoader embedded />
           </View>
