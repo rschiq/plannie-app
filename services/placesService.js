@@ -122,9 +122,26 @@ export async function getPlacesNearby(types, coords, options = {}) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return [];
 
   const requestedTypes = Array.isArray(types) ? types.filter(Boolean) : [];
-  const searchTypes = requestedTypes.length > 0 ? requestedTypes : ['restaurant'];
+  const searchTypes = requestedTypes.length > 0 ? requestedTypes : ['tourist_attraction'];
   const radius = options.radius ?? 8000;
   const maxResults = Math.min(Math.max(options.maxResults ?? 12, 1), 40);
+
+  // ✅ ADD KEYWORD SUPPORT HERE
+  const keyword =
+  options.keyword ||
+  (types.includes('restaurant')
+    ? 'restaurant OR brunch OR dinner OR cafe'
+    : types.includes('cafe')
+      ? 'coffee OR cafe OR dessert OR bakery'
+      : types.includes('bar')
+        ? 'bar OR cocktail OR lounge OR pub'
+        : types.includes('movie_theater')
+          ? 'movie theater OR cinema'
+          : types.includes('tourist_attraction')
+  ? 'topgolf OR billiards OR bowling OR arcade OR axe throwing OR go kart OR mini golf'
+          : types.includes('park')
+            ? 'hiking OR trail OR outdoor activity OR scenic'
+            : 'topgolf OR billiards OR bowling OR skating OR axe throwing OR go kart');
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -144,26 +161,35 @@ export async function getPlacesNearby(types, coords, options = {}) {
   await Promise.all(
     searchTypes.map(async (type) => {
       console.log('[API CALL] type used:', type);
+
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
         radius: String(radius),
-        type,
         key: GOOGLE_API_KEY,
       });
+
+      if (type) params.set('type', type);
+      if (keyword) params.set('keyword', keyword); // ✅ THIS IS THE FIX
+
       const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
+
       try {
         const res = await fetch(url);
         const data = await res.json();
         const results = data.results || [];
+
         results.forEach((p) => {
           if (!p?.place_id || byId.has(p.place_id)) return;
+
           const location =
             p.geometry?.location &&
             typeof p.geometry.location.lat === 'number' &&
             typeof p.geometry.location.lng === 'number'
               ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng }
               : null;
+
           const distanceMiles = toMiles({ lat, lng }, location);
+
           byId.set(p.place_id, {
             id: p.place_id,
             name: p.name,
@@ -181,9 +207,7 @@ export async function getPlacesNearby(types, coords, options = {}) {
             priceLevel: p.price_level ?? null,
           });
         });
-      } catch {
-        // ignore single-type failure and continue with other types
-      }
+      } catch {}
     })
   );
 
@@ -195,6 +219,7 @@ export async function getPlacesNearby(types, coords, options = {}) {
       uniqueMap.set(place.id, place);
     }
   });
+
   results = Array.from(uniqueMap.values());
   console.log('[Dedup] total after dedupe:', results.length);
 

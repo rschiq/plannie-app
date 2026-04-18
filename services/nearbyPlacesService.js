@@ -59,14 +59,17 @@ const MOMENT_KEYWORDS = {
 };
 
 const ACTIVITY_KEYWORD_SEARCHES = [
-  { keyword: 'escape room' },
-  { keyword: 'bowling alley' },
-  { keyword: 'mini golf' },
-  { keyword: 'go kart' },
-  { keyword: 'axe throwing' },
-  { keyword: 'vr experience' },
-  { keyword: 'skating rink' },
+ { keyword: 'topgolf' },
+  { keyword: 'golf driving range' },
+  { keyword: 'golf course' },
   { keyword: 'billiards' },
+  { keyword: 'pool hall' },
+  { keyword: 'bowling alley' },
+  { keyword: 'skating rink' },
+  { keyword: 'axe throwing' },
+  { keyword: 'go kart' },
+  { keyword: 'escape room' },
+  { keyword: 'vr experience' },
   { keyword: 'comedy club' },
   { keyword: 'movie theater' },
 ];

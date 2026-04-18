@@ -58,30 +58,6 @@ const FOOD_SUBCATEGORY_CONFIG = {
   },
 };
 
-// ── Moment Profiles ───────────────────────────────────────────
-const MOMENT_PROFILES = {
-  first_date: {
-    // Intimate, low-pressure, conversation-friendly
-    boostKeywords:   ['wine', 'bistro', 'garden', 'patio', 'romantic', 'dessert', 'coffee', 'cafe', 'intimate', 'cozy', 'candlelit', 'tea'],
-    penaltyKeywords: ['sports bar', 'nightclub', 'dive bar', 'buffet', 'karaoke', 'arcade', 'bowling', 'loud'],
-    minRating: 4.2,
-    boostScore: 2.0,
-  },
-  casual_hangout: {
-    // Easy, unpretentious, approachable — the opposite of first_date and date_night
-    boostKeywords:   ['brunch', 'pizza', 'burger', 'taco', 'local', 'neighborhood', 'patio', 'casual', 'diner', 'sandwich', 'bbq'],
-    penaltyKeywords: ['fine dining', 'tasting menu', 'prix fixe', 'rooftop', 'lounge', 'speakeasy', 'cocktail bar'],
-    minRating: 3.9,
-    boostScore: 1.5,
-  },
-  date_night: {
-    // Elevated, intentional — a real night out, not just dinner
-    boostKeywords:   ['rooftop', 'cocktail', 'speakeasy', 'lounge', 'steak', 'sushi', 'wine bar', 'italian', 'view', 'upscale', 'tasting'],
-    penaltyKeywords: ['fast food', 'buffet', 'counter service', 'drive-thru', 'cafe', 'diner', 'casual', 'family restaurant'],
-    minRating: 4.3,
-    boostScore: 2.0,
-  },
-};
 
 function resolveResultsMode(category, dateIdea) {
   if (category === 'food') {
@@ -111,9 +87,9 @@ function getPlaceTypes(category, dateIdea) {
 
   if (category === 'activity') {
     switch (dateIdea) {
-      case 'fun':        return ['amusement_center', 'bowling_alley'];
+      case 'fun':        return ['tourist_attraction',];
       case 'movies':     return ['movie_theater'];
-      case 'outdoor':    return ['park'];
+      case 'outdoor':    return ['park', ];
       default:           return ['tourist_attraction'];
     }
   }
@@ -124,18 +100,9 @@ function getPlaceTypes(category, dateIdea) {
 function applyBudgetFilter(results, budget) {
   if (!results?.length || !budget) return results;
 
-  // $ → price_level 0,1,2  |  $$ → price_level 3,4
-  const allowedLevels = budget === '$' ? [0, 1, 2] : [3, 4];
+  console.log('[BudgetFilter] disabled');
 
-  const byPrice = results.filter(p => {
-    const level = p.priceLevel;
-    if (level == null) return (Number(p.rating) || 0) >= 4.5;
-    return allowedLevels.includes(level);
-  });
-
-  const final = byPrice.length >= 0 ? byPrice : results;
-  console.log('[BudgetFilter] after:', final.length);
-  return final;
+  return results;
 }
 
 function lightFilter(results) {
@@ -219,31 +186,10 @@ function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
   return filtered;
 }
 
-function scorePlace(place, plan, resolvedMode) {
+function scorePlace(place) {
   const rating  = Number(place?.rating || 0);
   const reviews = Number(place?.user_ratings_total || place?.totalRatings || 0);
-  const name    = (place.name || '').toLowerCase();
-
-  // Base: rating × log10(reviews+1) — wide separation between quality tiers
-  let score = rating * Math.log10(reviews + 1);
-
-  // Moment profile boosts / penalties
-  const profile = MOMENT_PROFILES[plan?.moment];
-  if (profile) {
-    if (profile.boostKeywords.some(k => name.includes(k)))   score += profile.boostScore;
-    if (profile.penaltyKeywords.some(k => name.includes(k))) score -= profile.boostScore;
-  }
-
-  // Category mode keyword boosts
-  if (resolvedMode?.isFoodMode) {
-    const hits = (resolvedMode.rankingBoostKeywords || []).filter(w => name.includes(w)).length;
-    score += hits * 0.3;
-  }
-
-  // Chain penalties
-  if (['in-n-out', "bob's big boy"].some(k => name.includes(k))) score -= 2;
-
-  return score;
+  return rating * Math.log10(reviews + 1);
 }
 
 function getDistanceMeters(lat1, lng1, lat2, lng2) {
@@ -305,25 +251,14 @@ function getCuisine(types = [], name = '') {
   return null;
 }
 
-function curateResults(raw, plan, resolvedMode, lat, lng) {
-  const profile = MOMENT_PROFILES[plan?.moment];
-
-  // Soft minRating gate — only tighten if enough results survive
-  if (profile?.minRating) {
-    const qualified = raw.filter(p => (Number(p.rating) || 0) >= profile.minRating);
-    if (qualified.length >= 5) raw = qualified;
-  }
-
+function curateResults(raw, lat, lng) {
   raw.sort((a, b) => {
-    const diff = scorePlace(b, plan, resolvedMode) - scorePlace(a, plan, resolvedMode);
-    if (diff !== 0) return diff;
-    return getDistanceMeters(lat, lng, a.location?.lat, a.location?.lng) -
-           getDistanceMeters(lat, lng, b.location?.lat, b.location?.lng);
+    const distA = getDistanceMeters(lat, lng, a.location?.lat, a.location?.lng);
+    const distB = getDistanceMeters(lat, lng, b.location?.lat, b.location?.lng);
+    if (distA !== distB) return distA - distB;
+    return scorePlace(b) - scorePlace(a);
   });
-
-  console.log('[Curator] moment:', plan?.moment,
-    'top5:', raw.slice(0, 5).map(p => `${p.name}(${p.rating})`));
-
+  console.log('[Curator] top5:', raw.slice(0, 5).map(p => `${p.name}(${p.rating})`));
   return raw.slice(0, 5);
 }
 
@@ -678,6 +613,8 @@ export default function ResultsScreen() {
   // ── Fetch using nearbyPlacesService ─────────────────────────
   async function fetchPlaces() {
     if (plan.dateIdea === 'hidden_gem') {
+      console.log('[HiddenGem] disabled');
+  setPlaces([]);
       setComingSoon(true);
       setLoading(false);
       return;
@@ -740,23 +677,42 @@ export default function ResultsScreen() {
       const inArea  = raw.filter(p => (p.address || '').toLowerCase().includes(selectedArea));
       const nearby  = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= LOCAL_RADIUS);
 
-      console.log('[Area] selected:', selectedArea);
-      console.log('[Area] inArea:', inArea.length);
-      console.log('[Area] nearby:', nearby.length);
+// LOCATION PRIORITY (DISTANCE-BASED)
 
-      if (inArea.length >= 5)       raw = inArea;
-      else if (nearby.length >= 5)  raw = nearby;
+const STRICT_RADIUS = 4800;   // ~3 miles
+const NEARBY_RADIUS = 6400;   // ~4 miles
+
+// DEBUG — add this
+raw.slice(0, 5).forEach(p => {
+  console.log('[DEBUG LOCATION]', p.name, p.location);
+});
+const strictLocal = raw.filter(p =>
+  getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= STRICT_RADIUS
+);
+
+
+const nearbyLocal = raw.filter(p =>
+  getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= NEARBY_RADIUS
+);
+
+if (strictLocal.length >= 2) {
+  raw = strictLocal;
+  console.log('[LocationPriority] strictLocal only:', strictLocal.length);
+} else if (nearbyLocal.length > 0) {
+  raw = nearbyLocal;
+  console.log('[LocationPriority] nearby only:', nearbyLocal.length);
+} else {
+  raw = [];
+  console.log('[LocationPriority] no results in strict or nearby');
+}
+
+
       // else keep all raw results as fallback
 
       raw = raw.filter(p => !isBlockedPlace(p));
       console.log('[Block] passed:', raw.length);
 
-      const MAX_DISTANCE = 6400;
-      const withinRange = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= MAX_DISTANCE);
-      if (withinRange.length >= 5) raw = withinRange;
-      console.log('[Distance] within 4mi:', withinRange.length, '→ using:', raw.length);
-
-      const curated   = curateResults(raw, plan, resolvedMode, lat, lng);
+      const curated   = curateResults(raw, lat, lng);
       const inAreaIds = new Set(inArea.map(p => p.id));
       const mapped    = curated.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
@@ -846,6 +802,10 @@ export default function ResultsScreen() {
       const existingIds = new Set(places.map(p => p.id));
       const areaName = locationLabel.split(',')[0].trim();
       const types = resolvedMode.fetchTypes;
+      const keyword =
+  plan.dateIdea === 'fun' ? 'topgolf OR billiards OR bowling' :
+  plan.dateIdea === 'outdoor' ? 'hiking OR golf' :
+  '';
       console.log('[ResultsMode] selectedFoodSubcategory:', plan.dateIdea || null);
       console.log('[ResultsMode] resolvedMode:', resolvedMode.mode);
       console.log('[ResultsMode] headerTitle:', resolvedMode.displayTitle);
@@ -855,10 +815,11 @@ export default function ResultsScreen() {
       console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
 
       let rawMore = await getPlacesNearby(types, { lat, lng }, {
-        radius: 35000,
+        radius: 3500,
         maxResults: 40,
         selectedArea: areaName,
         budget: plan.budget,
+        keyword: 'topgolf OR hiking OR golf OR gunrange OR skating'
       });
       rawMore = lightFilter(rawMore);
       rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
@@ -868,9 +829,6 @@ export default function ResultsScreen() {
       rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
       const LOCAL_RADIUS = 6437;
       const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
-
-      const inArea  = rawMore.filter(p => (p.address || '').toLowerCase().includes(selectedArea));
-      const nearby  = rawMore.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= LOCAL_RADIUS);
 
       console.log('[Area] selected:', selectedArea);
       console.log('[Area] inArea:', inArea.length);
@@ -882,8 +840,12 @@ export default function ResultsScreen() {
       rawMore = rawMore.filter(p => !isBlockedPlace(p));
       console.log('[Block] expand passed:', rawMore.length);
 
-      const curatedMore = curateResults(rawMore, plan, resolvedMode, lat, lng);
-      const inAreaIds   = new Set(inArea.map(p => p.id));
+      const curatedMore = curateResults(rawMore, lat, lng);
+      const inAreaIds = new Set(
+  raw.filter(p =>
+    getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= STRICT_RADIUS
+  ).map(p => p.id)
+);
       const moreResults = curatedMore
         .filter(p => !existingIds.has(p.id))
         .map((p) => {
