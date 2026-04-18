@@ -87,7 +87,7 @@ function getPlaceTypes(category, dateIdea) {
 
   if (category === 'activity') {
     switch (dateIdea) {
-      case 'fun':        return ['tourist_attraction',];
+      case 'fun':        return ['bowling_alley', 'amusement_park', 'tourist_attraction'];
       case 'movies':     return ['movie_theater'];
       case 'outdoor':    return ['park', ];
       default:           return ['tourist_attraction'];
@@ -99,10 +99,15 @@ function getPlaceTypes(category, dateIdea) {
 
 function applyBudgetFilter(results, budget) {
   if (!results?.length || !budget) return results;
-
-  console.log('[BudgetFilter] disabled');
-
-  return results;
+  const allowedLevels = budget === '$' ? [0, 1, 2] : [3, 4];
+  const byPrice = results.filter(p => {
+    const level = p.priceLevel;
+    if (level == null) return (Number(p.rating) || 0) >= 4.5;
+    return allowedLevels.includes(level);
+  });
+  const final = byPrice.length >= 3 ? byPrice : results;
+  console.log('[BudgetFilter] after:', final.length);
+  return final;
 }
 
 function lightFilter(results) {
@@ -131,10 +136,13 @@ function lightFilter(results) {
 function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
   let filtered = results || [];
 
-  // Activity: never mix with restaurants, cafes, hotels
+  // Activity: exclude pure food/lodging — but keep places that are explicitly activity venues
+  // (many bowling alleys / amusement parks also carry 'restaurant' in their Google types)
   if (category === 'activity') {
+    const ACTIVITY_TYPES = new Set(['bowling_alley', 'amusement_park', 'movie_theater', 'park', 'tourist_attraction', 'night_club', 'casino', 'stadium']);
     filtered = filtered.filter(p => {
       const t = p.types || [];
+      if (t.some(at => ACTIVITY_TYPES.has(at))) return true;
       return !t.includes('restaurant') && !t.includes('lodging') &&
              !t.includes('grocery_or_supermarket');
     });
@@ -475,7 +483,7 @@ const det = StyleSheet.create({
 });
 
 // ── Place Card ─────────────────────────────────────────────────
-function PlaceCard({ place, onPress, variant = 'default' }) {
+function PlaceCard({ place, onPress, variant = 'default', rank }) {
   const isTopPick = variant === 'top';
   const priceStr  = place.priceLevel != null ? '$'.repeat(place.priceLevel + 1) : null;
   return (
@@ -484,29 +492,56 @@ function PlaceCard({ place, onPress, variant = 'default' }) {
       onPress={onPress}
       activeOpacity={0.88}
     >
+      {/* Photo / placeholder */}
       {place.photoUrl ? (
         <Image source={{ uri: place.photoUrl }} style={card.photo} resizeMode="cover" />
       ) : (
-        <View style={card.photoPlaceholder}><Text style={card.photoIcon}>📍</Text></View>
+        <View style={[card.photoPlaceholder, isTopPick && card.photoPlaceholderTop]}>
+          <Text style={card.photoIcon}>🍽️</Text>
+          <Text style={card.photoPlaceholderText}>Tap to see details</Text>
+        </View>
       )}
+
+      {/* Rank badge over photo */}
+      {isTopPick && rank != null && (
+        <View style={card.rankBadge}>
+          <Text style={card.rankText}>#{rank}</Text>
+        </View>
+      )}
+
       <View style={card.body}>
+        {/* Name + price */}
         <View style={card.titleRow}>
-          <Text style={card.name} numberOfLines={1}>{place.name}</Text>
+          <Text style={[card.name, isTopPick && card.nameTop]} numberOfLines={1}>{place.name}</Text>
           {priceStr && <Text style={card.price}>{priceStr}</Text>}
         </View>
+
+        {/* Row 1: rating + reviews + open status */}
         <View style={card.metaRow}>
           {place.rating && <Text style={card.rating}>⭐ {place.rating}</Text>}
           {place.totalRatings > 0 && <Text style={card.reviews}>({place.totalRatings.toLocaleString()})</Text>}
-          {place.cuisine && <Text style={card.cuisine}>{place.cuisine}</Text>}
-          {place.distance && <Text style={card.distance}>🚗 {place.distance} mi</Text>}
           {place.openNow != null && (
             <Text style={[card.openTag, place.openNow ? card.openNow : card.closedNow]}>
-              {place.openNow ? 'Open' : 'Closed'}
+              {place.openNow ? '● Open' : '● Closed'}
             </Text>
           )}
         </View>
-        {place.address ? <Text style={card.address} numberOfLines={1}>📍 {place.address}</Text> : null}
+
+        {/* Row 2: cuisine tag + distance */}
+        {(place.cuisine || place.distance) && (
+          <View style={card.tagsRow}>
+            {place.cuisine && <Text style={card.cuisine}>{place.cuisine}</Text>}
+            {place.distance && <Text style={card.distance}>📍 {place.distance} mi away</Text>}
+          </View>
+        )}
+
+        {/* Address */}
+        {place.address ? <Text style={card.address} numberOfLines={1}>{place.address}</Text> : null}
+
+        {/* Hours */}
         {place.hoursToday ? <Text style={card.hours} numberOfLines={1}>🕐 {place.hoursToday}</Text> : null}
+
+        {/* Review snippet */}
         {place.reviewSnippet ? (
           <Text style={card.review} numberOfLines={2}>"{place.reviewSnippet}"</Text>
         ) : null}
@@ -516,31 +551,66 @@ function PlaceCard({ place, onPress, variant = 'default' }) {
 }
 
 const card = StyleSheet.create({
-  wrap:  { backgroundColor: colors.cream2, borderRadius: 16, marginBottom: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4, ...shadow.sm },
+  wrap: {
+    backgroundColor: colors.cream2,
+    borderRadius: 18,
+    marginBottom: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.gray4,
+    ...shadow.sm,
+  },
   wrapTop: {
     backgroundColor: colors.white,
-    borderColor: 'rgba(212,149,111,0.40)',
+    borderColor: 'rgba(212,149,111,0.35)',
     borderWidth: 1.5,
     ...shadow.md,
   },
-  photo: { width: '100%', height: 180 },
-  photoPlaceholder: { width: '100%', height: 180, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
-  photoIcon: { fontSize: 28 },
-  body:  { padding: 14 },
-  name:  { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, flex: 1, marginRight: 6 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 3, flexWrap: 'wrap' },
-  rating:   { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
-  reviews:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  distance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  address:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  titleRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  price:     { fontFamily: fonts.body, fontSize: 12, color: colors.gold },
-  cuisine:   { fontFamily: fonts.body, fontSize: 12, color: colors.rose, backgroundColor: 'rgba(212,149,111,0.10)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  openTag:   { fontFamily: fonts.body, fontSize: 11, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  openNow:   { color: '#3d9970', backgroundColor: 'rgba(61,153,112,0.10)' },
+  photo: { width: '100%', height: 170 },
+  photoPlaceholder: {
+    width: '100%',
+    height: 110,
+    backgroundColor: colors.cream3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  photoPlaceholderTop: { backgroundColor: 'rgba(212,149,111,0.06)' },
+  photoIcon: { fontSize: 26, opacity: 0.5 },
+  photoPlaceholderText: { fontFamily: fonts.body, fontSize: 11, color: colors.gray3 },
+
+  rankBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: colors.rose,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    ...shadow.rose,
+  },
+  rankText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: '#F2EDE8' },
+
+  body:    { padding: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  name:    { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, flex: 1, marginRight: 8 },
+  nameTop: { fontSize: 17 },
+  price:   { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.gold },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  rating:  { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
+  reviews: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  openTag: { fontFamily: fonts.bodyMedium, fontSize: 11, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
+  openNow:   { color: colors.green, backgroundColor: 'rgba(91,191,133,0.12)' },
   closedNow: { color: colors.gray2, backgroundColor: colors.gray4 },
-  hours:     { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 2 },
-  review:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 4, fontStyle: 'italic', lineHeight: 15 },
+
+  tagsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
+  cuisine:  { fontFamily: fonts.body, fontSize: 12, color: colors.rose, backgroundColor: 'rgba(212,149,111,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  distance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+
+  address: { fontFamily: fonts.body, fontSize: 11, color: colors.gray3, marginBottom: 2 },
+  hours:   { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 2 },
+  review:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginTop: 6, fontStyle: 'italic', lineHeight: 17, opacity: 0.85 },
 });
 
 // ── Bottom Nav ─────────────────────────────────────────────────
@@ -659,9 +729,11 @@ export default function ResultsScreen() {
       console.log('[ResultsMode] includeKeywords:', resolvedMode.includeKeywords || []);
       console.log('[ResultsMode] excludeKeywords:', resolvedMode.excludeKeywords || []);
       console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
+      // Activities are sparser than food — use a wider radius so suburban venues are found
+      const fetchRadius = category === 'activity' ? 8000 : 3500;
       let raw = await getPlacesNearby(types, { lat, lng }, {
-        radius: 8000,
-        maxResults: 24,
+        radius: fetchRadius,
+        maxResults: 30,
         selectedArea: areaName,
         budget: plan.budget,
       });
@@ -671,50 +743,30 @@ export default function ResultsScreen() {
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
       const budgetFiltered = applyBudgetFilter(raw, plan.budget);
       raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
-      const LOCAL_RADIUS = 6437;
-      const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
 
-      const inArea  = raw.filter(p => (p.address || '').toLowerCase().includes(selectedArea));
-      const nearby  = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= LOCAL_RADIUS);
+      // LOCATION PRIORITY — strict local only
+      // Primary: address (Google vicinity) contains the selected area name
+      const areaNameLower = areaName.toLowerCase();
+      const byAddress = raw.filter(p => {
+        const addr = (p.address || '').toLowerCase();
+        return addr.includes(areaNameLower);
+      });
 
-// LOCATION PRIORITY (DISTANCE-BASED)
+      // Fallback: if Google returns "Los Angeles" instead of neighborhood name in vicinity,
+      // use 1800m tight radius which stays within the selected neighborhood center
+      const byTightRadius = raw.filter(p =>
+        getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= 1800
+      );
 
-const STRICT_RADIUS = 4800;   // ~3 miles
-const NEARBY_RADIUS = 6400;   // ~4 miles
-
-// DEBUG — add this
-raw.slice(0, 5).forEach(p => {
-  console.log('[DEBUG LOCATION]', p.name, p.location);
-});
-const strictLocal = raw.filter(p =>
-  getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= STRICT_RADIUS
-);
-
-
-const nearbyLocal = raw.filter(p =>
-  getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= NEARBY_RADIUS
-);
-
-if (strictLocal.length >= 2) {
-  raw = strictLocal;
-  console.log('[LocationPriority] strictLocal only:', strictLocal.length);
-} else if (nearbyLocal.length > 0) {
-  raw = nearbyLocal;
-  console.log('[LocationPriority] nearby only:', nearbyLocal.length);
-} else {
-  raw = [];
-  console.log('[LocationPriority] no results in strict or nearby');
-}
-
-
-      // else keep all raw results as fallback
+      const strictLocal = byAddress.length >= 1 ? byAddress : byTightRadius;
+      console.log('[LocationPriority] byAddress:', byAddress.length, '| byRadius(1800m):', byTightRadius.length, '| using:', strictLocal.length);
+      raw = strictLocal;
 
       raw = raw.filter(p => !isBlockedPlace(p));
       console.log('[Block] passed:', raw.length);
 
-      const curated   = curateResults(raw, lat, lng);
-      const inAreaIds = new Set(inArea.map(p => p.id));
-      const mapped    = curated.map((p) => {
+      const curated = curateResults(raw, lat, lng);
+      const mapped  = curated.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
         const distMiles  = distMeters / 1609.34;
         console.log('[Distance]', p.name, distMeters);
@@ -725,8 +777,8 @@ if (strictLocal.length >= 2) {
           totalRatings: p.totalRatings || 0,
           address:      p.address || '',
           distance:     distMiles.toFixed(1),
-          inArea:       inAreaIds.has(p.id),
-          isExpanded:   !inAreaIds.has(p.id),
+          inArea:       true,
+          isExpanded:   false,
           types:        p.types || [],
           photoUrl:     p.photoUrl,
           location:     p.location,
@@ -815,11 +867,10 @@ if (strictLocal.length >= 2) {
       console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
 
       let rawMore = await getPlacesNearby(types, { lat, lng }, {
-        radius: 3500,
+        radius: 10000,
         maxResults: 40,
         selectedArea: areaName,
         budget: plan.budget,
-        keyword: 'topgolf OR hiking OR golf OR gunrange OR skating'
       });
       rawMore = lightFilter(rawMore);
       rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
@@ -827,25 +878,12 @@ if (strictLocal.length >= 2) {
       console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
       const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
       rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
-      const LOCAL_RADIUS = 6437;
-      const selectedArea = (plan.location || '').split(',')[0].trim().toLowerCase();
-
-      console.log('[Area] selected:', selectedArea);
-      console.log('[Area] inArea:', inArea.length);
-      console.log('[Area] nearby:', nearby.length);
-
-      if (inArea.length >= 5)       rawMore = inArea;
-      else if (nearby.length >= 5)  rawMore = nearby;
 
       rawMore = rawMore.filter(p => !isBlockedPlace(p));
       console.log('[Block] expand passed:', rawMore.length);
 
       const curatedMore = curateResults(rawMore, lat, lng);
-      const inAreaIds = new Set(
-  raw.filter(p =>
-    getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= STRICT_RADIUS
-  ).map(p => p.id)
-);
+      
       const moreResults = curatedMore
         .filter(p => !existingIds.has(p.id))
         .map((p) => {
@@ -859,8 +897,8 @@ if (strictLocal.length >= 2) {
             totalRatings: p.totalRatings || 0,
             address:      p.address || '',
             distance:     distMiles.toFixed(1),
-            inArea:       inAreaIds.has(p.id),
-            isExpanded:   !inAreaIds.has(p.id),
+            inArea:       false,
+            isExpanded:   true,
             types:        p.types || [],
             photoUrl:     p.photoUrl,
             location:     p.location,
@@ -945,8 +983,6 @@ if (strictLocal.length >= 2) {
             totalRatings: p.user_ratings_total || 0,
             address:      p.vicinity || '',
             distance:     dist.toFixed(1),
-            inArea:       isInArea(p, areaName),
-            isExpanded:   !isInArea(p, areaName),
             alreadyInList: existingPlaceIds.has(p.place_id),
             types:        p.types || [],
             photoUrl:     p.photos?.[0]?.photo_reference
@@ -1041,10 +1077,16 @@ if (strictLocal.length >= 2) {
           </View>
         ) : places.length === 0 ? (
           <View style={s.center}>
-            <Text style={s.errorText}>No results found nearby.</Text>
-            <Text style={s.errorSub}>Try a different category or location.</Text>
-            <TouchableOpacity style={s.retryBtn} onPress={() => router.back()} activeOpacity={0.8}>
-              <Text style={s.retryBtnText}>Go Back</Text>
+            <Text style={s.errorText}>No results found in this area.</Text>
+            <Text style={s.errorSub}>Would you like to expand to nearby areas?</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={expandSearch} activeOpacity={0.8} disabled={expandLoading}>
+              {expandLoading
+                ? <ActivityIndicator size="small" color="#F2EDE8" />
+                : <Text style={s.retryBtnText}>Expand to nearby areas</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.retryBtn, { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.gray3 }]} onPress={() => router.back()} activeOpacity={0.8}>
+              <Text style={[s.retryBtnText, { color: colors.charcoal }]}>Go Back</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -1053,36 +1095,45 @@ if (strictLocal.length >= 2) {
             contentContainerStyle={[s.content, { paddingBottom: Math.max(insets.bottom + 32, 40) }]}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={s.count}>{places.length} places found · tap for details</Text>
+            <Text style={s.count}>{places.length} place{places.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
 
             {/* ── Top Picks ── */}
-            {topPicks.length > 0 && <Text style={s.sectionTitleTop}>Top Picks</Text>}
-            {topPicks.map(p => (
+            {topPicks.length > 0 && (
+              <View style={s.sectionHeaderRow}>
+                <View style={s.sectionAccentDot} />
+                <Text style={s.sectionTitleTop}>Top Picks</Text>
+              </View>
+            )}
+            {topPicks.map((p, i) => (
               <View key={p.id}>
-                {/* Label when expanded results start */}
                 {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
                   <View style={s.expandedLabel}>
                     <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
                   </View>
                 )}
-                <PlaceCard place={p} onPress={() => openDetail(p)} variant="top" />
+                <PlaceCard place={p} onPress={() => openDetail(p)} variant="top" rank={i + 1} />
               </View>
             ))}
 
             {/* ── More Options ── */}
-            {moreOptions.length > 0 && <Text style={s.sectionTitleMore}>More Options</Text>}
-            {moreOptions.map(p => (
+            {moreOptions.length > 0 && (
+              <View style={s.sectionHeaderRow}>
+                <View style={[s.sectionAccentDot, { backgroundColor: colors.gray3 }]} />
+                <Text style={s.sectionTitleMore}>More Options</Text>
+              </View>
+            )}
+            {moreOptions.map((p, i) => (
               <View key={p.id}>
                 {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
                   <View style={s.expandedLabel}>
                     <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
                   </View>
                 )}
-                <PlaceCard place={p} onPress={() => openDetail(p)} variant="default" />
+                <PlaceCard place={p} onPress={() => openDetail(p)} variant="default" rank={topPicks.length + i + 1} />
               </View>
             ))}
 
-            {/* ── Expand button at BOTTOM of list ── */}
+            {/* ── Expand button at bottom of local results ── */}
             {!expanded && places.length > 0 && (
               <View style={s.expandBanner}>
                 <Text style={s.expandBannerText}>
@@ -1104,7 +1155,7 @@ if (strictLocal.length >= 2) {
 
             {expanded && (
               <View style={[s.expandedLabel, { marginTop: 8 }]}>
-                <Text style={s.expandedLabelText}>✓ Showing results from nearby areas</Text>
+                <Text style={s.expandedLabelText}>📍 Showing results from nearby areas</Text>
               </View>
             )}
 
@@ -1249,18 +1300,19 @@ const s = StyleSheet.create({
   sub:         { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
   scroll:      { flex: 1 },
   content:     { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12 },
-  count:       { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginBottom: 12, letterSpacing: 0.3 },
-  sectionTitleTop:  {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 16,
+  count: { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginBottom: 16, letterSpacing: 0.3 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 4 },
+  sectionAccentDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.rose },
+  sectionTitleTop: {
+    fontFamily: fonts.display,
+    fontSize: 22,
     color: colors.charcoal,
-    marginBottom: 12,
-    marginTop: 8,
+    letterSpacing: 0.3,
   },
   sectionTitleMore: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 14,
-    color: colors.gray,
+    color: colors.gray2,
     marginBottom: 10,
     marginTop: 14,
   },

@@ -126,22 +126,17 @@ export async function getPlacesNearby(types, coords, options = {}) {
   const radius = options.radius ?? 8000;
   const maxResults = Math.min(Math.max(options.maxResults ?? 12, 1), 40);
 
-  // ✅ ADD KEYWORD SUPPORT HERE
-  const keyword =
-  options.keyword ||
-  (types.includes('restaurant')
-    ? 'restaurant OR brunch OR dinner OR cafe'
-    : types.includes('cafe')
-      ? 'coffee OR cafe OR dessert OR bakery'
-      : types.includes('bar')
-        ? 'bar OR cocktail OR lounge OR pub'
-        : types.includes('movie_theater')
-          ? 'movie theater OR cinema'
-          : types.includes('tourist_attraction')
-  ? 'topgolf OR billiards OR bowling OR arcade OR axe throwing OR go kart OR mini golf'
-          : types.includes('park')
-            ? 'hiking OR trail OR outdoor activity OR scenic'
-            : 'topgolf OR billiards OR bowling OR skating OR axe throwing OR go kart');
+  // Per-type keyword map — specific types don't need keywords (they're precise enough)
+  const TYPE_KEYWORDS = {
+    restaurant:        options.keyword || 'restaurant OR brunch OR dinner OR cafe',
+    cafe:              options.keyword || 'coffee OR cafe OR dessert OR bakery',
+    bakery:            options.keyword || 'coffee OR cafe OR dessert OR bakery',
+    bar:               options.keyword || 'bar OR cocktail OR lounge OR pub',
+    movie_theater:     options.keyword || 'movie theater OR cinema',
+    tourist_attraction: options.keyword || 'topgolf OR billiards OR bowling OR arcade OR axe throwing OR go kart OR mini golf',
+    park:              options.keyword || 'hiking OR trail OR outdoor activity OR scenic',
+    // bowling_alley, amusement_park, movie_theater — type is precise, no keyword needed
+  };
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -169,7 +164,8 @@ export async function getPlacesNearby(types, coords, options = {}) {
       });
 
       if (type) params.set('type', type);
-      if (keyword) params.set('keyword', keyword); // ✅ THIS IS THE FIX
+      const keyword = TYPE_KEYWORDS[type]; // only apply keyword if defined for this type
+      if (keyword) params.set('keyword', keyword);
 
       const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
 
