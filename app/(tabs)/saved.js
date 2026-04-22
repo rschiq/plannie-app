@@ -164,19 +164,21 @@ function UpcomingCard({ plan, onOpen, onCalendar, onDelete, onFavorite }) {
   return (
     <View style={styles.upcomingCard}>
       <TouchableOpacity onPress={onOpen} activeOpacity={0.85}>
-        <View style={styles.cardHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>{plan.title}{plan.favorite ? '  ❤️' : ''}</Text>
-            <Text style={styles.cardDate}>{plan.dateDisplay} · {plan.city}</Text>
+        <View>
+          <View style={styles.cardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{plan.title}{plan.favorite ? '  ❤️' : ''}</Text>
+              <Text style={styles.cardDate}>{plan.dateDisplay} · {plan.city}</Text>
+            </View>
+            <View style={[styles.vibeBadge, { backgroundColor: vc.bg }]}>
+              <Text style={[styles.vibeBadgeText, { color: vc.text }]}>{plan.vibe}</Text>
+            </View>
           </View>
-          <View style={[styles.vibeBadge, { backgroundColor: vc.bg }]}>
-            <Text style={[styles.vibeBadgeText, { color: vc.text }]}>{plan.vibe}</Text>
+          <View style={styles.cardBody}>
+            {plan.items.map((item, i) => (
+              <Text key={i} style={styles.cardItem}>{item}</Text>
+            ))}
           </View>
-        </View>
-        <View style={styles.cardBody}>
-          {plan.items.map((item, i) => (
-            <Text key={i} style={styles.cardItem}>{item}</Text>
-          ))}
         </View>
       </TouchableOpacity>
       <View style={styles.cardFooter}>
@@ -474,9 +476,17 @@ export default function SavedScreen() {
   const [selectedPlace,  setSelectedPlace]  = useState(null);
   const [showPlaceDetail, setShowPlaceDetail] = useState(false);
 
+  // Deduplicate by id before splitting — guards against duplicate ids in persisted data
+  const seenIds = new Set();
+  const uniquePlans = savedPlans.filter(p => {
+    if (!p.id || seenIds.has(p.id)) return false;
+    seenIds.add(p.id);
+    return true;
+  });
+
   // Split into upcoming / past
-  const upcoming = savedPlans.filter((p) => !isPast(p));
-  const past     = savedPlans.filter((p) =>  isPast(p));
+  const upcoming = uniquePlans.filter((p) => !isPast(p));
+  const past     = uniquePlans.filter((p) =>  isPast(p));
 
   function openCalendar(plan) {
     const title = encodeURIComponent(plan.title || 'Plannie Date Night');

@@ -1,13 +1,17 @@
 // app/plan/choose-for-me.js — Tonight's Plan For You
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Alert, Linking,
+  Modal, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { getPlacesNearby } from '../../services/placesService';
+
+const SCREEN_W = Dimensions.get('window').width;
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 // ── Filters — mirrors results.js ──────────────────────────────
 const BAD_TYPES = new Set([
@@ -148,8 +152,166 @@ async function fetchLocalActivities(coords, areaName, fetchRadius = 12000) {
   return [...local, ...wider];
 }
 
+// ── Place Detail Sheet ────────────────────────────────────────
+function PlaceDetailSheet({ place, onClose }) {
+  const insets  = useSafeAreaInsets();
+  const [details, setDetails] = useState(null);
+  const [detLoad, setDetLoad] = useState(false);
+
+  useEffect(() => {
+    if (!place?.id) return;
+    setDetails(null);
+    setDetLoad(true);
+    fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(place.id)}&fields=photos,opening_hours,reviews&key=${GOOGLE_API_KEY}`
+    )
+      .then(r => r.json())
+      .then(data => { if (data.result) setDetails(data.result); })
+      .catch(() => {})
+      .finally(() => setDetLoad(false));
+  }, [place?.id]);
+
+  if (!place) return null;
+
+  function openInMaps() {
+    if (place.location?.lat) {
+      Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${place.location.lat},${place.location.lng}&query_place_id=${place.id}`
+      );
+    } else {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`);
+    }
+  }
+
+  // Photos: prefer fetched gallery, fall back to the single thumbnail
+  const fetchedPhotoUris = (details?.photos || [])
+    .slice(0, 5)
+    .map(ph => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photoreference=${ph.photo_reference}&key=${GOOGLE_API_KEY}`);
+  const photoUris = fetchedPhotoUris.length > 0
+    ? fetchedPhotoUris
+    : place.photoUrl ? [place.photoUrl] : [];
+
+  // Type label — skip generic Google meta-types
+  const SKIP_TYPES = new Set(['point_of_interest', 'establishment', 'food', 'premise', 'geocode']);
+  const readableType = (place.types || [])
+    .filter(t => !SKIP_TYPES.has(t))
+    .map(t => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
+    [0] || null;
+
+  // Open status + today's hours
+  const openNow = details?.opening_hours?.open_now ?? null;
+  const day = new Date().getDay();
+  const hoursToday = details?.opening_hours?.weekday_text?.[day === 0 ? 6 : day - 1] || null;
+  const hoursValue = hoursToday ? hoursToday.replace(/^[^:]+:\s*/, '') : null;
+
+  // Best single review, trimmed to 220 chars
+  const reviewTexts = (details?.reviews || [])
+    .filter(r => (r.text || '').trim().length > 30)
+    .slice(0, 1)
+    .map(r => r.text.trim().slice(0, 220));
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={det.overlay}>
+        {/* Tapping the dimmed area above the sheet dismisses it */}
+        <TouchableOpacity style={det.dismissArea} onPress={onClose} activeOpacity={1} />
+
+        <View style={[det.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          {/* Handle row with close button */}
+          <View style={det.topBar}>
+            <View style={det.handle} />
+            <TouchableOpacity style={det.closeX} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={det.closeXText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Photo gallery ── */}
+          {detLoad && photoUris.length === 0 ? (
+            <View style={det.photoPlaceholder}>
+              <ActivityIndicator size="small" color={colors.rose} />
+            </View>
+          ) : photoUris.length > 0 ? (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              style={det.photoScroll}
+            >
+              {photoUris.map((uri, i) => (
+                <Image key={i} source={{ uri }} style={[det.photo, { width: SCREEN_W }]} resizeMode="cover" />
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={det.photoPlaceholder}>
+              <Text style={{ fontSize: 40 }}>📍</Text>
+            </View>
+          )}
+
+          <ScrollView
+            style={det.bodyScroll}
+            contentContainerStyle={[det.body, { paddingBottom: Math.max(insets.bottom + 24, 32) }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Type tag */}
+            {readableType && <Text style={det.typeTag}>{readableType}</Text>}
+
+            {/* Name */}
+            <Text style={det.name}>{place.name}</Text>
+
+            {/* Rating */}
+            {place.rating != null && (
+              <View style={det.ratingRow}>
+                <Text style={det.rating}>⭐ {Number(place.rating).toFixed(1)}</Text>
+                {place.totalRatings > 0 && (
+                  <Text style={det.reviewCount}>({place.totalRatings.toLocaleString()} reviews)</Text>
+                )}
+              </View>
+            )}
+
+            {/* Open / closed */}
+            {openNow != null && (
+              <View style={det.statusRow}>
+                <Text style={[det.openBadge, openNow ? det.openNowBadge : det.closedBadge]}>
+                  {openNow ? '● Open now' : '● Closed'}
+                </Text>
+                {hoursValue && <Text style={det.hoursText}>{hoursValue}</Text>}
+              </View>
+            )}
+
+            {/* Address */}
+            {place.address ? (
+              <View style={det.infoRow}>
+                <Text style={det.infoIcon}>📍</Text>
+                <Text style={det.infoText}>{place.address}</Text>
+              </View>
+            ) : null}
+
+            {/* Reviews */}
+            {reviewTexts.length > 0 && (
+              <View style={det.reviewsSection}>
+                <Text style={det.reviewsHeader}>What people say</Text>
+                {reviewTexts.map((text, i) => (
+                  <View key={i} style={det.reviewCard}>
+                    <Text style={det.reviewText}>"{text}{text.length === 220 ? '…' : ''}"</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <View style={{ height: 12 }} />
+
+            <TouchableOpacity style={det.mapsBtn} onPress={openInMaps} activeOpacity={0.88}>
+              <Text style={det.mapsBtnText}>🗺️ Open in Maps</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Place Card ────────────────────────────────────────────────
-function PlaceCard({ label, emoji, place, onSwap, canSwap, tabsContent, loadingOverlay }) {
+function PlaceCard({ label, emoji, place, onPress, onSwap, canSwap, tabsContent, loadingOverlay }) {
   return (
     <View style={s.section}>
       <View style={s.sectionHeader}>
@@ -166,25 +328,27 @@ function PlaceCard({ label, emoji, place, onSwap, canSwap, tabsContent, loadingO
           </View>
         ) : place ? (
           <>
-            {place.photoUrl ? (
-              <Image source={{ uri: place.photoUrl }} style={s.cardPhoto} />
-            ) : (
-              <View style={s.cardPhotoFallback}>
-                <Text style={s.cardPhotoEmoji}>{emoji}</Text>
-              </View>
-            )}
+            <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
+              {place.photoUrl ? (
+                <Image source={{ uri: place.photoUrl }} style={s.cardPhoto} />
+              ) : (
+                <View style={s.cardPhotoFallback}>
+                  <Text style={s.cardPhotoEmoji}>{emoji}</Text>
+                </View>
+              )}
 
-            <View style={s.cardBody}>
-              <Text style={s.cardName} numberOfLines={2}>{place.name}</Text>
-              <View style={s.cardMeta}>
-                {place.rating != null && (
-                  <Text style={s.cardRating}>⭐ {Number(place.rating).toFixed(1)}</Text>
-                )}
-                {place.address ? (
-                  <Text style={s.cardAddress} numberOfLines={1}>{place.address}</Text>
-                ) : null}
+              <View style={s.cardBody}>
+                <Text style={s.cardName} numberOfLines={2}>{place.name}</Text>
+                <View style={s.cardMeta}>
+                  {place.rating != null && (
+                    <Text style={s.cardRating}>⭐ {Number(place.rating).toFixed(1)}</Text>
+                  )}
+                  {place.address ? (
+                    <Text style={s.cardAddress} numberOfLines={1}>{place.address}</Text>
+                  ) : null}
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {canSwap && (
               <TouchableOpacity style={s.swapBtn} onPress={onSwap} activeOpacity={0.8}>
@@ -218,6 +382,7 @@ export default function ChooseForMeScreen() {
   const [activityIdx, setActivityIdx]             = useState(0);
   const [noResults, setNoResults]                 = useState(false);
   const [saved, setSaved]                         = useState(false);
+  const [detailPlace, setDetailPlace]             = useState(null);
   const runRef            = useRef(false);
   const expandedCuisines  = useRef(new Set());
 
@@ -342,7 +507,14 @@ export default function ChooseForMeScreen() {
     if (activity)   saveSinglePlace(activity,   { category: 'activity', city: plan.location });
     setSaved(true);
     const names = [restaurant?.name, activity?.name].filter(Boolean).join(' + ');
-    Alert.alert('Plan Saved!', `${names} added to your saved plans.`);
+    Alert.alert(
+      'Plan Saved!',
+      `${names} added to your saved plans.`,
+      [
+        { text: 'View Saved Plans', onPress: () => router.replace('/(tabs)/saved') },
+        { text: 'Back Home',        onPress: () => router.replace('/(tabs)/') },
+      ]
+    );
   }
 
   // ── Loading ───────────────────────────────────────────────
@@ -434,6 +606,7 @@ export default function ChooseForMeScreen() {
             label="Dinner"
             emoji="🍽️"
             place={restaurant}
+            onPress={() => restaurant && setDetailPlace(restaurant)}
             onSwap={() => setRestaurantIdx(i => (i + 1) % currentList.length)}
             canSwap={currentList.length > 1}
             tabsContent={
@@ -478,6 +651,7 @@ export default function ChooseForMeScreen() {
             label="Activity"
             emoji="🎯"
             place={activity}
+            onPress={() => activity && setDetailPlace(activity)}
             onSwap={() => setActivityIdx(i => (i + 1) % activities.length)}
             canSwap={activities.length > 1}
           />
@@ -510,9 +684,52 @@ export default function ChooseForMeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <PlaceDetailSheet place={detailPlace} onClose={() => setDetailPlace(null)} />
     </SafeAreaView>
   );
 }
+
+const det = StyleSheet.create({
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  dismissArea:  { flex: 1 },
+  sheet:        { backgroundColor: colors.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', overflow: 'hidden' },
+  topBar:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  handle:       { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.gray3, marginHorizontal: 40 },
+  closeX:       { padding: 4 },
+  closeXText:   { fontSize: 16, color: colors.gray2 },
+
+  photoScroll:      { height: 230 },
+  photo:            { height: 230 },
+  photoPlaceholder: { height: 160, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
+
+  body:         { padding: 20 },
+
+  typeTag:      { fontFamily: fonts.bodyMedium, fontSize: 11, color: colors.rose, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6, opacity: 0.85 },
+  name:         { fontFamily: fonts.display, fontSize: 20, color: colors.charcoal, marginBottom: 8, lineHeight: 26 },
+
+  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  rating:       { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
+  reviewCount:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+
+  statusRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' },
+  openBadge:    { fontFamily: fonts.bodyMedium, fontSize: 12, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20 },
+  openNowBadge: { color: '#3a9c5e', backgroundColor: 'rgba(91,191,133,0.13)' },
+  closedBadge:  { color: colors.gray2, backgroundColor: colors.gray4 },
+  hoursText:    { fontFamily: fonts.body, fontSize: 11, color: colors.gray2 },
+
+  infoRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 },
+  infoIcon:     { fontSize: 13, marginTop: 1 },
+  infoText:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray, flex: 1, lineHeight: 18 },
+
+  reviewsSection: { marginTop: 4, marginBottom: 8 },
+  reviewsHeader:  { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.charcoal, marginBottom: 8, letterSpacing: 0.2 },
+  reviewCard:     { backgroundColor: colors.cream2, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.gray4 },
+  reviewText:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray, lineHeight: 17, fontStyle: 'italic' },
+
+  mapsBtn:      { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 16, alignItems: 'center' },
+  mapsBtnText:  { fontFamily: fonts.bodyMedium, fontSize: 15, color: '#F2EDE8' },
+});
 
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.cream },

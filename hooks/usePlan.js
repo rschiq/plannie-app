@@ -75,7 +75,19 @@ export function PlanProvider({ children }) {
   // ── Load saved plans from AsyncStorage on mount ───────────────
   useEffect(() => {
     AsyncStorage.getItem('@plannie_saved_plans')
-      .then(data => { if (data) setSavedPlans(JSON.parse(data)); })
+      .then(data => {
+        if (!data) return;
+        const parsed = JSON.parse(data);
+        // Deduplicate by id — existing data may have colliding ids from a
+        // prior bug where Date.now() was used without a random suffix
+        const seen = new Set();
+        const deduped = parsed.filter(p => {
+          if (!p.id || seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+        setSavedPlans(deduped);
+      })
       .catch(() => {});
   }, []);
 
@@ -149,7 +161,7 @@ export function PlanProvider({ children }) {
     };
 
     const newPlan = {
-      id:          `sp_${Date.now()}`,
+      id:          `sp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       title:       titles[plan.vibe] || 'A Night to Remember 🌟💕',
       date:        plan.date        || '',
       dateDisplay: plan.dateDisplay || 'Upcoming',
@@ -185,7 +197,7 @@ export function PlanProvider({ children }) {
     const CATEGORY_EMOJIS = { food: '🍽️', drinks: '🍸', coffee: '☕', activity: '🎯' };
     const emoji = CATEGORY_EMOJIS[context.category] || '📍';
     const newPlan = {
-      id:          `sp_${Date.now()}`,
+      id:          `sp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       title:       place.name,
       date:        '',
       dateDisplay: 'Saved Place',

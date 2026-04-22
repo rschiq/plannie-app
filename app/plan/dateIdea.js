@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,13 +21,15 @@ const OPTIONS_BY_CATEGORY = {
 export default function DateIdeaScreen() {
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
+  const [selected, setSelected] = useState(null);
 
   const options = OPTIONS_BY_CATEGORY[plan.category] || [];
 
   function handleSelect(value) {
+    setSelected(value);
     console.log('[Plan Step 5] dateIdea_selected', { dateIdea: value });
     updatePlan({ dateIdea: value });
-    router.push('/plan/results');
+    setTimeout(() => router.push('/plan/results'), 150);
   }
 
   return (
@@ -43,7 +46,7 @@ export default function DateIdeaScreen() {
         {options.map((option) => (
           <TouchableOpacity
             key={option.key}
-            style={s.card}
+            style={[s.card, selected === option.key && s.cardActive]}
             onPress={() => handleSelect(option.key)}
             activeOpacity={0.85}
           >
@@ -81,6 +84,7 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.gray4,
   },
+  cardActive: { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.06)' },
   cardEmoji: { fontSize: 36, marginBottom: 8 },
   cardLabel: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, textAlign: 'center' },
 });

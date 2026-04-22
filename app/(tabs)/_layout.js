@@ -5,20 +5,16 @@ import { colors, fonts } from '../../constants/theme';
 
 function TabIcon({ emoji, label, focused }) {
   return (
-    <View
-      style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 70,
-      }}
-    >
-      <Text style={{ fontSize: 22 }}>{emoji}</Text>
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: 64 }}>
+      <Text style={{ fontSize: 20, lineHeight: 24, opacity: focused ? 1 : 0.45 }}>{emoji}</Text>
       <Text
+        numberOfLines={1}
         style={{
           fontSize: 10,
-          fontFamily: fonts.bodyMedium,
-          color: focused ? colors.rose : colors.gray3,
-          marginTop: 3,
+          lineHeight: 13,
+          marginTop: 1,
+          fontFamily: focused ? fonts.bodyMedium : fonts.body,
+          color: focused ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
           textAlign: 'center',
         }}
       >
@@ -30,10 +26,7 @@ function TabIcon({ emoji, label, focused }) {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-
-  // Android needs a little extra breathing room on some devices
-  const androidExtraBottom = Platform.OS === 'android' ? 10 : 0;
-  const bottomSpace = insets.bottom + androidExtraBottom;
+  const safeBottom = insets.bottom + (Platform.OS === 'android' ? 10 : 0);
 
   return (
     <Tabs
@@ -41,17 +34,19 @@ export default function TabLayout() {
         headerShown: false,
         tabBarShowLabel: false,
         tabBarItemStyle: {
-          paddingVertical: 0,
+          flex: 1,
           justifyContent: 'center',
           alignItems: 'center',
+          paddingTop: 0,
+          paddingBottom: 0,
+          marginBottom: 0,
         },
         tabBarStyle: {
-          backgroundColor: colors.white,
-          borderTopColor: colors.cream2,
-          borderTopWidth: 1,
-          height: 68 + bottomSpace,
-          paddingTop: 8,
-          paddingBottom: bottomSpace,
+          backgroundColor: '#1A1612',
+          borderTopWidth: 0,
+          height: 64 + safeBottom,
+          paddingTop: 18,
+          paddingBottom: safeBottom || 4,
         },
       }}
     >

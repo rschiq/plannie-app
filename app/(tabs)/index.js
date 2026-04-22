@@ -16,7 +16,7 @@ export default function HomeScreen() {
     // ✅ Midnight Velvet gradient — deep purple-black with subtle depth
     // No more warm browns. Three stops give dimension without being flat.
     <LinearGradient
-      colors={['#13101E', '#0E0C15', '#080610']}
+      colors={['#13101E', '#0E0C15', '#1A1612']}
       style={styles.container}
       start={{ x: 0.3, y: 0 }}
       end={{ x: 0.7, y: 1 }}
@@ -58,7 +58,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Stats row */}
-        <View style={[styles.stats, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}>
+        <View style={[styles.stats, { paddingBottom: 16 }]}>
           {[
             { n: '4.9★', l: 'Rating' },
             { n: '18k+', l: 'Dates Planned' },

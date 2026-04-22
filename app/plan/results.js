@@ -157,8 +157,8 @@ const BLOCK_LIST = [
   'school','church','storage','auto repair','car wash',
   'trampoline','sky zone','urban air','bounce','chuck e cheese',
   'hard rock cafe','cheesecake factory','buffalo wild wings',
-  "applebee's","chili's",'olive garden','ihop',"denny's",
-  "bob's big boy",'cracker barrel','red lobster','outback steakhouse','hooters',
+  "applebee's","chili's",'ihop',"denny's",
+  "bob's big boy",'cracker barrel','red lobster','hooters',
   'mcdonald','burger king','wendy','jack in the box','kfc','taco bell',
 ];
 
@@ -988,8 +988,8 @@ export default function ResultsScreen() {
           >
             <Text style={s.count}>{places.length} place{places.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
 
-            {/* ── Not enough nearby banner ── */}
-            {places.length < 3 && !expanded && (
+            {/* ── Not enough nearby banner (not shown for movies — expand goes at bottom) ── */}
+            {places.length < 3 && !expanded && plan.dateIdea !== 'movies' && (
               <View style={s.expandBanner}>
                 <Text style={s.expandBannerText}>
                   Not enough nearby. Tap Expand to see nearby areas.
@@ -1045,7 +1045,7 @@ export default function ResultsScreen() {
             ))}
 
             {/* ── Expand button at bottom of local results ── */}
-            {!expanded && places.length >= 3 && (
+            {!expanded && (places.length >= 3 || plan.dateIdea === 'movies') && (
               <View style={s.expandBanner}>
                 <Text style={s.expandBannerText}>
                   Want to see more options from nearby areas?
