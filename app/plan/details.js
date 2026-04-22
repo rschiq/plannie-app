@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Animated, Platform,
@@ -64,6 +64,11 @@ export default function DetailsScreen() {
     return d;
   });
 
+  useEffect(() => {
+    console.log('Location:', cityVal);
+    console.log('Coords:', coords);
+  }, [cityVal, coords]);
+
   // ── Smart display name formatter ────────────────────────────
   // "Studio City, Los Angeles, CA, USA" → "Studio City, Los Angeles"
   // "Los Angeles, CA, USA"              → "Los Angeles, CA"
@@ -102,6 +107,12 @@ export default function DetailsScreen() {
 
       const res  = await fetch(url);
       const data = await res.json();
+      console.log('[Autocomplete] status:', data?.status, 'predictions:', data?.predictions?.length || 0);
+      if (data?.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        setSuggestions([]);
+        setShowDrop(false);
+        return;
+      }
       if (data.predictions) {
         // Keep only geographic results — filter out pure business listings
         const GEO = new Set([
@@ -127,22 +138,37 @@ export default function DetailsScreen() {
   }
 
   async function pickSuggestion(prediction) {
-    // ✅ Clean display name — not raw "Studio City, Los Angeles, CA, USA"
-    const displayName = formatPlaceName(prediction);
+    const displayName = prediction?.description || formatPlaceName(prediction);
     setCityVal(displayName);
     console.log('[Plan Step 1] location_selected_from_autocomplete', { location: displayName });
     setShowDrop(false);
     setSuggestions([]);
     try {
-      const url = 'https://maps.googleapis.com/maps/api/geocode/json?place_id=' +
-        prediction.place_id + '&key=' + GOOGLE_API_KEY;
-      const res  = await fetch(url);
-      const data = await res.json();
-      if (data.results?.[0]) {
-        const { lat, lng } = data.results[0].geometry.location;
-        setCoords({ lat, lng });
-        console.log('[Plan Step 1] coords_selected_from_autocomplete', { coords: { lat, lng } });
+      const detailsUrl = 'https://maps.googleapis.com/maps/api/place/details/json?place_id=' +
+        prediction.place_id + '&fields=geometry&key=' + GOOGLE_API_KEY;
+      const detailsRes = await fetch(detailsUrl);
+      const detailsData = await detailsRes.json();
+      console.log('[Autocomplete] details status:', detailsData?.status);
+      let lat = detailsData?.result?.geometry?.location?.lat;
+      let lng = detailsData?.result?.geometry?.location?.lng;
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        const geocodeUrl = 'https://maps.googleapis.com/maps/api/geocode/json?place_id=' +
+          prediction.place_id + '&key=' + GOOGLE_API_KEY;
+        const geocodeRes  = await fetch(geocodeUrl);
+        const geocodeData = await geocodeRes.json();
+        console.log('[Autocomplete] geocode fallback status:', geocodeData?.status);
+        lat = geocodeData?.results?.[0]?.geometry?.location?.lat;
+        lng = geocodeData?.results?.[0]?.geometry?.location?.lng;
       }
+
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          setCoords({ lat, lng });
+          console.log('[Plan Step 1] coords_selected_from_autocomplete', { coords: { lat, lng } });
+        } else {
+          setCoords(null);
+          console.log('[Autocomplete] failed to resolve numeric coords from selection');
+        }
     } catch (e) { console.log('Geocode error:', e.message); }
   }
 
@@ -155,30 +181,21 @@ export default function DetailsScreen() {
         setLocLoading(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = pos.coords;
-      const url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng=' +
-        latitude + ',' + longitude + '&key=' + GOOGLE_API_KEY;
-      const res  = await fetch(url);
-      const data = await res.json();
-      if (data.results?.[0]) {
-        const components = data.results[0].address_components;
-        const city    = components.find(c => c.types.includes('locality'))?.long_name || '';
-        const state   = components.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
-        const country = components.find(c => c.types.includes('country'))?.long_name || '';
-        const cityName = city
-          ? (state ? city + ', ' + state : city + ', ' + country)
-          : data.results[0].formatted_address.split(',').slice(0, 2).join(',');
-        setCityVal(cityName);
-        setCoords({ lat: latitude, lng: longitude });
+      const loc = await Location.getCurrentPositionAsync({});
+      setCityVal('Current Location');
+      const lat = loc?.coords?.latitude;
+      const lng = loc?.coords?.longitude;
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        setCoords({ lat, lng });
         console.log('[Plan Step 1] location_selected_from_device', {
-          location: cityName,
-          coords: { lat: latitude, lng: longitude },
+          location: 'Current Location',
+          coords: { lat, lng },
         });
+      } else {
+        setCoords(null);
       }
     } catch (e) {
-      console.log('Location error:', e.message);
-      alert('Could not get your location. Please type a city instead.');
+      console.log('Location error:', e);
     }
     setLocLoading(false);
   }
@@ -216,6 +233,12 @@ export default function DetailsScreen() {
   }
 
   function handleNext() {
+    const isValidLocation =
+      coords &&
+      typeof coords.lat === 'number' &&
+      typeof coords.lng === 'number';
+    if (!isValidLocation) return;
+
     const updates = {
       location: cityVal,
       coords,
@@ -232,7 +255,11 @@ export default function DetailsScreen() {
     router.push('/plan/who');
   }
 
-  const canContinue = cityVal.trim().length > 0;
+  const isValidLocation =
+    coords &&
+    typeof coords.lat === 'number' &&
+    typeof coords.lng === 'number';
+  const canContinue = !!isValidLocation;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -287,7 +314,7 @@ export default function DetailsScreen() {
               value={cityVal}
               onChangeText={onCityChange}
               onFocus={() => setCityFocused(true)}
-              onBlur={() => { setCityFocused(false); setTimeout(() => setShowDrop(false), 200); }}
+              onBlur={() => { setCityFocused(false); setTimeout(() => setShowDrop(false), 400); }}
               placeholder="Search city or neighborhood…"
               placeholderTextColor={colors.gray3}
               autoCorrect={false}
