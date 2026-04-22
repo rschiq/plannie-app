@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
@@ -11,15 +11,13 @@ const OPTIONS_BY_CATEGORY = {
     { key: 'drinks', label: 'Drinks', emoji: '🍸' },
   ],
   activity: [
-    { key: 'fun',        label: 'Fun',        emoji: '🎉' },
-    { key: 'movies',     label: 'Movies',     emoji: '🎬' },
-    { key: 'outdoor',    label: 'Outdoor',    emoji: '🌤️' },
-    { key: 'hidden_gem', label: 'Hidden Gem', emoji: '🧩' },
+    { key: 'indoor',  label: 'Indoor',  emoji: '🎳' },
+    { key: 'outdoor', label: 'Outdoor', emoji: '🌤️' },
+    { key: 'movies',  label: 'Movies',  emoji: '🎬' },
   ],
 };
 
 export default function DateIdeaScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { plan, updatePlan } = usePlan();
 
@@ -31,19 +29,14 @@ export default function DateIdeaScreen() {
     router.push('/plan/results');
   }
 
-  function handleSkip() {
-    console.log('[Plan Step 5] dateIdea_skipped');
-    router.push('/plan/results');
-  }
-
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
           <Text style={s.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={s.step}>Optional</Text>
-        <Text style={s.title}>Want to narrow it down?</Text>
+        <Text style={s.step}>Step 3 of 3</Text>
+        <Text style={s.title}>What kind of{'\n'}<Text style={{ fontStyle: 'italic' }}>vibe?</Text></Text>
       </View>
 
       <View style={s.grid}>
@@ -60,11 +53,6 @@ export default function DateIdeaScreen() {
         ))}
       </View>
 
-      <View style={[s.footer, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
-        <TouchableOpacity style={s.skipBtn} onPress={handleSkip} activeOpacity={0.85}>
-          <Text style={s.skipBtnText}>Skip</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -95,7 +83,4 @@ const s = StyleSheet.create({
   },
   cardEmoji: { fontSize: 36, marginBottom: 8 },
   cardLabel: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, textAlign: 'center' },
-  footer: { paddingHorizontal: 24, paddingBottom: 16 },
-  skipBtn: { borderRadius: 999, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray3, backgroundColor: colors.white },
-  skipBtnText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.charcoal },
 });

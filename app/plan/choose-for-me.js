@@ -7,7 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getPlacesNearby, getActivityPlaces } from '../../services/placesService';
+import { getPlacesNearby } from '../../services/placesService';
 
 // ── Filters — mirrors results.js ──────────────────────────────
 const BAD_TYPES = new Set([
@@ -115,7 +115,15 @@ async function fetchLocalRestaurants(coords, areaName, fetchRadius = 10000) {
 
 async function fetchLocalActivities(coords, areaName, fetchRadius = 12000) {
   const { lat, lng } = coords;
-  const raw = await getActivityPlaces('indoor', { lat, lng }, { radius: fetchRadius, maxResults: 40 });
+  const raw = await getPlacesNearby(
+    ['bowling_alley', 'tourist_attraction'],
+    { lat, lng },
+    {
+      radius: fetchRadius,
+      maxResults: 40,
+      keyword: 'arcade OR escape room OR billiards OR bowling OR skating OR vr OR trampoline OR laser tag',
+    }
+  );
   const areaLower = (areaName || '').toLowerCase();
 
   const qualityPass = p =>
@@ -238,9 +246,9 @@ export default function ChooseForMeScreen() {
       fetchLocalActivities(coords, areaName),
     ]);
 
-    // Minimum 2s loading so it feels intentional
+    // Minimum 3s loading so it feels intentional
     const elapsed = Date.now() - start;
-    if (elapsed < 2000) await new Promise(r => setTimeout(r, 2000 - elapsed));
+    if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
 
     setCuisineMap(buildCuisineMap(rest));
     setSelectedCuisine('all');
@@ -330,8 +338,8 @@ export default function ChooseForMeScreen() {
     const list       = cuisineMap[selectedCuisine] || [];
     const restaurant = list[restaurantIdx];
     const activity   = activities[activityIdx];
-    if (restaurant) saveSinglePlace(restaurant, { category: 'food',     city: plan.location, moment: plan.moment });
-    if (activity)   saveSinglePlace(activity,   { category: 'activity', city: plan.location, moment: plan.moment });
+    if (restaurant) saveSinglePlace(restaurant, { category: 'food',     city: plan.location });
+    if (activity)   saveSinglePlace(activity,   { category: 'activity', city: plan.location });
     setSaved(true);
     const names = [restaurant?.name, activity?.name].filter(Boolean).join(' + ');
     Alert.alert('Plan Saved!', `${names} added to your saved plans.`);

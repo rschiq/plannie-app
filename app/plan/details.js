@@ -10,15 +10,9 @@ import { usePlan } from '../../hooks/usePlan';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ScreenHeader, ProgressBar, PrimaryButton } from '../../components/UI';
-import { SelectableCard } from '../../components/SelectableCard';
 import { AnimatedPrimaryButton } from '../../components/ScreenTransition';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
-
-const BUDGETS = [
-  { key: '$',  label: 'Low Budget',    desc: 'Great dates on a budget', emoji: '💚' },
-  { key: '$$', label: 'Nice Night Out', desc: 'A nice night out',        emoji: '💛' },
-];
 
 function TapCard({ onPress, selected, children, style }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -46,7 +40,6 @@ export default function DetailsScreen() {
   const [dateVal, setDateVal]         = useState(plan.date || today);
   const [cityVal, setCityVal]         = useState(plan.location || '');
   const [timeVal, setTimeVal]         = useState(plan.time || '17:00');
-  const [budget, setBudget]           = useState(plan.budget || '$$');
   const [suggestions, setSuggestions] = useState([]);
   const [showDrop, setShowDrop]       = useState(false);
   const [locLoading, setLocLoading]   = useState(false);
@@ -242,9 +235,6 @@ export default function DetailsScreen() {
     const updates = {
       location: cityVal,
       coords,
-      budget,
-      group: null,
-      moment: null,
       category: null,
     };
     console.log('[Plan Step 1] committing_selection', {
@@ -252,7 +242,7 @@ export default function DetailsScreen() {
       nextPlanPreview: { ...plan, ...updates },
     });
     updatePlan(updates);
-    router.push('/plan/who');
+    router.push('/plan/category');
   }
 
   const isValidLocation =
@@ -269,7 +259,7 @@ export default function DetailsScreen() {
         subtitle="Let's set the details"
         onBack={() => router.push('/(tabs)/')}
       />
-      <ProgressBar total={7} current={1} />
+      <ProgressBar total={3} current={1} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]} keyboardShouldPersistTaps="handled">
 
@@ -378,28 +368,6 @@ export default function DetailsScreen() {
           </View>
         )}
 
-        {/* BUDGET */}
-        <Text style={styles.sectionLabel}>💰  What's your budget?</Text>
-        <View style={styles.budgetRow}>
-          {BUDGETS.map((b) => (
-            <SelectableCard
-              key={b.key}
-              selected={budget === b.key}
-              onPress={() => {
-                setBudget(b.key);
-                console.log('[Plan Step 1] budget_selected', { budget: b.key });
-              }}
-              style={styles.budgetCard}
-              innerStyle={styles.budgetCardInner}
-              pressScale={0.95}
-            >
-              <Text style={styles.budgetEmoji}>{b.emoji}</Text>
-              <Text style={[styles.budgetKey, budget === b.key && styles.budgetKeyActive]}>{b.key}</Text>
-              <Text style={[styles.budgetLabel, budget === b.key && styles.budgetLabelActive]} numberOfLines={2}>{b.label}</Text>
-            </SelectableCard>
-          ))}
-        </View>
-
         <View style={{ height: 32 }} />
       </ScrollView>
 
@@ -438,14 +406,6 @@ const styles = StyleSheet.create({
   dropIcon: { fontSize: 13 },
   dropMain: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.charcoal },
   dropSub:  { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 1 },
-  budgetRow: { flexDirection: 'row', gap: 8 },
-  budgetCard: { flex: 1 },
-  budgetCardInner: { paddingVertical: 14, paddingHorizontal: 6, alignItems: 'center' },
-  budgetEmoji: { fontSize: 18, marginBottom: 6 },
-  budgetKey: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.gray2, marginBottom: 3 },
-  budgetKeyActive: { color: colors.rose },
-  budgetLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.gray3, textAlign: 'center', lineHeight: 13 },
-  budgetLabelActive: { color: colors.rose },
   pickerWrap: { backgroundColor: '#F2EDE8', borderRadius: 14, marginTop: 8, overflow: 'hidden' },
-  bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
+  bbar:       { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });

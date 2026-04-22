@@ -45,7 +45,7 @@ export default function CategoryScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
           <Text style={s.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={s.step}>Step 3 of 3</Text>
+        <Text style={s.step}>Step 2 of 3</Text>
         <Text style={s.title}>What do you{'\n'}<Text style={s.titleAccent}>want to do?</Text></Text>
       </View>
 
@@ -70,6 +70,25 @@ export default function CategoryScreen() {
             </TouchableOpacity>
           );
         })}
+      </View>
+
+      {/* Choose For Me */}
+      <View style={s.cfmWrap}>
+        <TouchableOpacity
+          style={s.cfmCard}
+          onPress={() => {
+            console.log('[Plan Step 2] choose_for_me_selected');
+            router.push('/plan/choose-for-me');
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={s.cfmEmoji}>✨</Text>
+          <View style={s.cfmText}>
+            <Text style={s.cfmLabel}>Choose For Me</Text>
+            <Text style={s.cfmSub}>Let Plannie pick the perfect plan</Text>
+          </View>
+          <Text style={s.cfmChevron}>→</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Continue */}
@@ -121,6 +140,24 @@ const s = StyleSheet.create({
   cardLabelActive: { color: colors.rose },
   cardSub:         { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, textAlign: 'center' },
   checkDot:        { position: 'absolute', top: 12, right: 12, width: 12, height: 12, borderRadius: 6, backgroundColor: colors.rose },
+
+  cfmWrap: { paddingHorizontal: 20, paddingBottom: 12 },
+  cfmCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.cream2,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: 'rgba(212,149,111,0.30)',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 12,
+  },
+  cfmEmoji: { fontSize: 24 },
+  cfmText:  { flex: 1 },
+  cfmLabel: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, marginBottom: 2 },
+  cfmSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
+  cfmChevron: { fontFamily: fonts.bodySemiBold, fontSize: 18, color: colors.rose },
 
   footer:              { paddingHorizontal: 24, paddingBottom: 16 },
   continueBtn:         { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 18, alignItems: 'center' },

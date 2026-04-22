@@ -10,7 +10,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { isInArea } from '../../services/nearbyPlacesService';
 import { getPlacesNearby } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
@@ -21,93 +20,95 @@ const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
 
 // ── Category config ────────────────────────────────────────────
-const ACTIVITY_TITLES = {
-  fun:        'Fun',
-  movies:     'Movies',
-  outdoor:    'Outdoor',
-  hidden_gem: 'Hidden Gems',
-};
-
-const FOOD_SUBCATEGORY_CONFIG = {
+const SUBCATEGORY_CONFIG = {
   brunch_dinner: {
-    mode: 'brunch_dinner',
+    fetchTypes: ['restaurant'],
+    keyword: 'restaurant',
+    excludeKeywords: ['cafe', 'coffee', 'tea'],
     displayTitle: 'Restaurants',
-    fetchTypes: ['restaurant', 'bakery'],
-    includeKeywords: ['brunch', 'dinner', 'grill', 'kitchen', 'eatery', 'restaurant'],
-    excludeKeywords: ['bar only', 'nightclub', 'coffee roasters', 'cafe'],
-    rankingBoostKeywords: ['restaurant', 'brunch', 'grill', 'kitchen', 'steak', 'wine'],
-    rejectedTypes: ['grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+    minRating: 4.0,
   },
   coffee_dessert: {
-    mode: 'coffee_dessert',
-    displayTitle: 'Cafes',
     fetchTypes: ['cafe', 'bakery'],
-    includeKeywords: ['coffee', 'cafe', 'espresso', 'tea', 'dessert', 'bakery', 'starbucks'],
-    excludeKeywords: ['steakhouse', 'grill house', 'nightclub', 'sports bar'],
-    rankingBoostKeywords: ['local', 'artisan', 'espresso', 'cafe', 'bakery', 'dessert'],
-    rejectedTypes: ['bar', 'night_club', 'liquor_store', 'grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+    keyword: 'coffee OR cafe OR espresso',
+    excludeKeywords: [],
+    displayTitle: 'Cafes',
+    minRating: 4.0,
   },
   drinks: {
-    mode: 'drinks',
-    displayTitle: 'Bars',
     fetchTypes: ['bar'],
-    includeKeywords: ['bar', 'cocktail', 'wine', 'pub', 'speakeasy', 'lounge', 'rooftop', 'bistro'],
-    excludeKeywords: ['coffee', 'cafe', 'espresso', 'bakery'],
-    rankingBoostKeywords: ['cocktail', 'wine', 'speakeasy', 'rooftop', 'lounge', 'pub'],
-    rejectedTypes: ['cafe', 'bakery', 'grocery_or_supermarket', 'supermarket', 'department_store', 'shopping_mall'],
+    keyword: 'bar OR cocktail OR lounge',
+    excludeKeywords: [],
+    displayTitle: 'Bars',
+    minRating: 4.0,
+  },
+  indoor: {
+    fetchTypes: ['bowling_alley', 'tourist_attraction'],
+    keyword: 'arcade OR escape room OR billiards OR skating OR vr OR trampoline OR laser tag',
+    excludeKeywords: [],
+    displayTitle: 'Indoor Activities',
+    minRating: 4.0,
+  },
+  outdoor: {
+    fetchTypes: ['tourist_attraction'],
+    keyword: 'go kart OR paintball OR mini golf OR golf OR hiking OR trail',
+    excludeKeywords: [],
+    displayTitle: 'Outdoor Activities',
+    minRating: 4.0,
+  },
+  movies: {
+    fetchTypes: ['movie_theater'],
+    keyword: null,
+    excludeKeywords: [],
+    displayTitle: 'Movies',
+    minRating: 4.0,
+    fetchRadius: 10000,
   },
 };
 
-
-function resolveResultsMode(category, dateIdea) {
-  if (category === 'food') {
-    const resolved = FOOD_SUBCATEGORY_CONFIG[dateIdea] || FOOD_SUBCATEGORY_CONFIG.brunch_dinner;
-    return {
-      ...resolved,
-      isFoodMode: true,
-    };
-  }
-
-  return {
-    mode: category || 'activity',
-    displayTitle: category === 'activity' ? (ACTIVITY_TITLES[dateIdea] || 'Activities') : 'Places',
-    fetchTypes: getPlaceTypes(category, dateIdea),
-    includeKeywords: [],
-    excludeKeywords: [],
-    rankingBoostKeywords: [],
-    rejectedTypes: [],
-    isFoodMode: false,
-  };
+function getSubcategoryConfig(category, dateIdea) {
+  const key = dateIdea;
+  if (SUBCATEGORY_CONFIG[key]) return SUBCATEGORY_CONFIG[key];
+  if (category === 'activity') return SUBCATEGORY_CONFIG.indoor;
+  return SUBCATEGORY_CONFIG.brunch_dinner;
 }
 
-function getPlaceTypes(category, dateIdea) {
-  if (category === 'food') {
-    return (FOOD_SUBCATEGORY_CONFIG[dateIdea]?.fetchTypes || FOOD_SUBCATEGORY_CONFIG.brunch_dinner.fetchTypes).slice();
-  }
+// ── Activity diversity (max 2 per type group) ─────────────────
+const ACTIVITY_GROUPS = [
+  ['arcade', 'fun center'],
+  ['escape'],
+  ['billiard', 'pool hall'],
+  ['skate', 'skating'],
+  ['vr', 'virtual reality'],
+  ['trampoline', 'sky zone', 'urban air', 'bounce'],
+  ['laser'],
+  ['bowling', 'bowl'],
+  ['kart', 'go kart', 'karting'],
+  ['paintball'],
+  ['mini golf', 'putt'],
+  ['topgolf', 'golf'],
+  ['hiking', 'trail'],
+];
 
-  if (category === 'activity') {
-    switch (dateIdea) {
-      case 'fun':        return ['bowling_alley', 'amusement_park', 'tourist_attraction'];
-      case 'movies':     return ['movie_theater'];
-      case 'outdoor':    return ['park', ];
-      default:           return ['tourist_attraction'];
-    }
+function getActivityGroup(place) {
+  const n = (place.name || '').toLowerCase();
+  for (let i = 0; i < ACTIVITY_GROUPS.length; i++) {
+    if (ACTIVITY_GROUPS[i].some(m => n.includes(m))) return i;
   }
-
-  return [];
+  const types = place.types || [];
+  if (types.includes('bowling_alley'))  return 100;
+  if (types.includes('movie_theater'))  return 101;
+  if (types.includes('amusement_park')) return 102;
+  return 200 + (place.id || '').charCodeAt(0);
 }
 
-function applyBudgetFilter(results, budget) {
-  if (!results?.length || !budget) return results;
-  const allowedLevels = budget === '$' ? [0, 1, 2] : [3, 4];
-  const byPrice = results.filter(p => {
-    const level = p.priceLevel;
-    if (level == null) return (Number(p.rating) || 0) >= 4.5;
-    return allowedLevels.includes(level);
+function diversifyActivities(places, limit = 2) {
+  const counts = {};
+  return places.filter(p => {
+    const g = String(getActivityGroup(p));
+    counts[g] = (counts[g] || 0) + 1;
+    return counts[g] <= limit;
   });
-  const final = byPrice.length >= 3 ? byPrice : results;
-  console.log('[BudgetFilter] after:', final.length);
-  return final;
 }
 
 function lightFilter(results) {
@@ -133,72 +134,6 @@ function lightFilter(results) {
   });
 }
 
-function applyCategoryFilter(results, dateIdea, resolvedMode, category) {
-  let filtered = results || [];
-
-  // Activity: exclude pure food/lodging — but keep places that are explicitly activity venues
-  // (many bowling alleys / amusement parks also carry 'restaurant' in their Google types)
-  if (category === 'activity') {
-    const ACTIVITY_TYPES = new Set(['bowling_alley', 'amusement_park', 'movie_theater', 'park', 'tourist_attraction', 'night_club', 'casino', 'stadium']);
-    filtered = filtered.filter(p => {
-      const t = p.types || [];
-      if (t.some(at => ACTIVITY_TYPES.has(at))) return true;
-      return !t.includes('restaurant') && !t.includes('lodging') &&
-             !t.includes('grocery_or_supermarket');
-    });
-  }
-
-  // Movies: require movie_theater type, exclude non-cinemas
-  if (dateIdea === 'movies') {
-    const MOVIES_JUNK = ['home theater', 'installation', 'repair', 'security'];
-    filtered = filtered.filter(p => {
-      const t = p.types || [];
-      const n = (p.name || '').toLowerCase();
-      if (!t.includes('movie_theater')) return false;
-      if (MOVIES_JUNK.some(k => n.includes(k))) return false;
-      return true;
-    });
-  }
-
-  if (category === 'food' && resolvedMode?.isFoodMode) {
-    if (dateIdea === 'drinks') {
-      filtered = filtered.filter(p => {
-        const t = p.types || [];
-        const n = (p.name || '').toLowerCase();
-        return t.includes('bar') || n.includes('bar') || n.includes('lounge') ||
-               n.includes('pub') || n.includes('cocktail');
-      });
-    }
-
-    if (dateIdea === 'coffee_dessert') {
-      filtered = filtered.filter(p => {
-        const t = p.types || [];
-        const n = (p.name || '').toLowerCase();
-        const isCafe = t.includes('cafe') || t.includes('bakery') ||
-          ['coffee','cafe','dessert','bakery','espresso','tea','boba'].some(k => n.includes(k));
-        const isRestaurant = ['cuisine','steakhouse','grill','bbq','big boy','brasserie'].some(k => n.includes(k));
-        return isCafe && !isRestaurant;
-      });
-    }
-
-    if (dateIdea === 'brunch_dinner') {
-      filtered = filtered.filter(p => {
-        const t = p.types || [];
-        const n = (p.name || '').toLowerCase();
-        if (['mcdonald','burger king','wendy','jack in the box','in-n-out',"bob's big boy"].some(k => n.includes(k))) return false;
-        return t.includes('restaurant');
-      });
-    }
-  }
-
-  return filtered;
-}
-
-function scorePlace(place) {
-  const rating  = Number(place?.rating || 0);
-  const reviews = Number(place?.user_ratings_total || place?.totalRatings || 0);
-  return rating * Math.log10(reviews + 1);
-}
 
 function getDistanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -259,15 +194,9 @@ function getCuisine(types = [], name = '') {
   return null;
 }
 
-function curateResults(raw, lat, lng) {
-  raw.sort((a, b) => {
-    const distA = getDistanceMeters(lat, lng, a.location?.lat, a.location?.lng);
-    const distB = getDistanceMeters(lat, lng, b.location?.lat, b.location?.lng);
-    if (distA !== distB) return distA - distB;
-    return scorePlace(b) - scorePlace(a);
-  });
-  console.log('[Curator] top5:', raw.slice(0, 5).map(p => `${p.name}(${p.rating})`));
-  return raw.slice(0, 5);
+function curateResults(raw) {
+  raw.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+  return raw;
 }
 
 function buildPhotoUrl(ref, maxW = 400) {
@@ -651,24 +580,22 @@ export default function ResultsScreen() {
   const [places,     setPlaces]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
-  const [comingSoon, setComingSoon] = useState(false);
   const [selected,   setSelected]   = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [savedIds,   setSavedIds]   = useState(new Set());
   const [expanded,      setExpanded]      = useState(false);
   const [expandLoading, setExpandLoading] = useState(false);
-  const [showSearch,    setShowSearch]    = useState(false);  // manual search modal
+  const [showSearch,    setShowSearch]    = useState(false);
   const [searchQuery,   setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchSelected, setSearchSelected] = useState(null);
   const [showPaywall, setShowPaywall] = useState(false);
 
   const enrichedRef = useRef(new Set());
 
   const category = plan.category || 'food';
-  const resolvedMode = resolveResultsMode(category, plan.dateIdea);
-  const label = resolvedMode.displayTitle;
+  const subcategoryConfig = getSubcategoryConfig(category, plan.dateIdea);
+  const label = subcategoryConfig.displayTitle;
   const locationLabel = plan.location || '';
   const topPicks = places.slice(0, 5);
   const moreOptions = places.slice(5);
@@ -680,15 +607,8 @@ export default function ResultsScreen() {
     }
   }, [places]);
 
-  // ── Fetch using nearbyPlacesService ─────────────────────────
+  // ── Fetch ────────────────────────────────────────────────────
   async function fetchPlaces() {
-    if (plan.dateIdea === 'hidden_gem') {
-      console.log('[HiddenGem] disabled');
-  setPlaces([]);
-      setComingSoon(true);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
     const startTime = Date.now();
@@ -701,8 +621,6 @@ export default function ResultsScreen() {
         return;
       }
 
-      // ✅ Use stored coords — set by location picker in details.js
-      // Fall back to geocoding city string if coords missing
       let lat, lng;
       if (plan.coords?.lat && plan.coords?.lng) {
         lat = plan.coords.lat;
@@ -718,58 +636,51 @@ export default function ResultsScreen() {
         lng = data.results[0].geometry.location.lng;
       }
 
-      // Extract clean area name from city string (e.g. "Studio City, CA" → "Studio City")
       const areaName = locationLabel.split(',')[0].trim();
+      const areaNameLower = areaName.toLowerCase();
+      const cfg = getSubcategoryConfig(category, plan.dateIdea);
+      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 8000 : 3500);
 
-      const types = resolvedMode.fetchTypes;
-      console.log('[ResultsMode] selectedFoodSubcategory:', plan.dateIdea || null);
-      console.log('[ResultsMode] resolvedMode:', resolvedMode.mode);
-      console.log('[ResultsMode] headerTitle:', resolvedMode.displayTitle);
-      console.log('[ResultsMode] fetchTypes:', types);
-      console.log('[ResultsMode] includeKeywords:', resolvedMode.includeKeywords || []);
-      console.log('[ResultsMode] excludeKeywords:', resolvedMode.excludeKeywords || []);
-      console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
-      // Activities are sparser than food — use a wider radius so suburban venues are found
-      const fetchRadius = category === 'activity' ? 8000 : 3500;
-      let raw = await getPlacesNearby(types, { lat, lng }, {
+      console.log('[Results] dateIdea:', plan.dateIdea, 'types:', cfg.fetchTypes, 'keyword:', cfg.keyword);
+
+      let raw = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
         radius: fetchRadius,
         maxResults: 30,
-        selectedArea: areaName,
-        budget: plan.budget,
+        keyword: cfg.keyword || undefined,
       });
+
       raw = lightFilter(raw);
-      raw = applyCategoryFilter(raw, plan.dateIdea, resolvedMode, plan.category);
-      const beforeBudgetFilterCount = raw.length;
-      console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(raw, plan.budget);
-      raw = budgetFiltered.length > 0 ? budgetFiltered : raw;
-
-      // LOCATION PRIORITY — strict local only
-      // Primary: address (Google vicinity) contains the selected area name
-      const areaNameLower = areaName.toLowerCase();
-      const byAddress = raw.filter(p => {
-        const addr = (p.address || '').toLowerCase();
-        return addr.includes(areaNameLower);
-      });
-
-      // Fallback: if Google returns "Los Angeles" instead of neighborhood name in vicinity,
-      // use 1800m tight radius which stays within the selected neighborhood center
-      const byTightRadius = raw.filter(p =>
-        getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= 1800
-      );
-
-      const strictLocal = byAddress.length >= 1 ? byAddress : byTightRadius;
-      console.log('[LocationPriority] byAddress:', byAddress.length, '| byRadius(1800m):', byTightRadius.length, '| using:', strictLocal.length);
-      raw = strictLocal;
-
       raw = raw.filter(p => !isBlockedPlace(p));
-      console.log('[Block] passed:', raw.length);
 
-      const curated = curateResults(raw, lat, lng);
-      const mapped  = curated.map((p) => {
+      if (cfg.excludeKeywords?.length) {
+        raw = raw.filter(p => {
+          const n = (p.name || '').toLowerCase();
+          return !cfg.excludeKeywords.some(k => n.includes(k));
+        });
+      }
+
+      raw = raw.filter(p => p.rating != null && Number(p.rating) >= cfg.minRating);
+
+      // Local-first: movies skip address filter (theaters are sparse)
+      let mainPool;
+      if (plan.dateIdea === 'movies') {
+        mainPool = raw;
+      } else {
+        const byAddress = raw.filter(p => (p.address || '').toLowerCase().includes(areaNameLower));
+        const byRadiusLocal = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= 5000);
+        mainPool = byAddress.length >= 3 ? byAddress : byRadiusLocal;
+        console.log('[LocalFirst] byAddress:', byAddress.length, 'byRadius5km:', byRadiusLocal.length, 'using:', mainPool.length);
+      }
+
+      if (category === 'activity') {
+        mainPool = diversifyActivities(mainPool);
+      }
+
+      const curated = curateResults(mainPool);
+
+      const mapped = curated.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
         const distMiles  = distMeters / 1609.34;
-        console.log('[Distance]', p.name, distMeters);
         return {
           id:           p.id,
           name:         p.name,
@@ -782,11 +693,11 @@ export default function ResultsScreen() {
           types:        p.types || [],
           photoUrl:     p.photoUrl,
           location:     p.location,
-          priceLevel:     p.priceLevel ?? null,
-          openNow:        p.isOpenNow ?? null,
-          cuisine:        getCuisine(p.types || [], p.name || ''),
-          reviewSnippet:  null,
-          hoursToday:     null,
+          priceLevel:   p.priceLevel ?? null,
+          openNow:      p.isOpenNow ?? null,
+          cuisine:      getCuisine(p.types || [], p.name || ''),
+          reviewSnippet: null,
+          hoursToday:    null,
         };
       });
 
@@ -832,11 +743,10 @@ export default function ResultsScreen() {
     }
   }
 
-  // ── Expand search to nearby areas ────────────────────────────
+  // ── Expand to nearby areas (radius = 15km) ──────────────────
   async function expandSearch() {
     setExpandLoading(true);
     try {
-      // Use stored coords (works for ANY city worldwide — not just Studio City)
       let lat, lng;
       if (plan.coords?.lat && plan.coords?.lng) {
         lat = plan.coords.lat;
@@ -852,44 +762,37 @@ export default function ResultsScreen() {
       }
 
       const existingIds = new Set(places.map(p => p.id));
-      const areaName = locationLabel.split(',')[0].trim();
-      const types = resolvedMode.fetchTypes;
-      const keyword =
-  plan.dateIdea === 'fun' ? 'topgolf OR billiards OR bowling' :
-  plan.dateIdea === 'outdoor' ? 'hiking OR golf' :
-  '';
-      console.log('[ResultsMode] selectedFoodSubcategory:', plan.dateIdea || null);
-      console.log('[ResultsMode] resolvedMode:', resolvedMode.mode);
-      console.log('[ResultsMode] headerTitle:', resolvedMode.displayTitle);
-      console.log('[ResultsMode] fetchTypes:', types);
-      console.log('[ResultsMode] includeKeywords:', resolvedMode.includeKeywords || []);
-      console.log('[ResultsMode] excludeKeywords:', resolvedMode.excludeKeywords || []);
-      console.log('[Search] using types:', types, 'category:', plan.category, 'dateIdea:', plan.dateIdea);
+      const cfg = getSubcategoryConfig(category, plan.dateIdea);
 
-      let rawMore = await getPlacesNearby(types, { lat, lng }, {
-        radius: 10000,
+      let rawMore = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
+        radius: 15000,
         maxResults: 40,
-        selectedArea: areaName,
-        budget: plan.budget,
+        keyword: cfg.keyword || undefined,
       });
+
       rawMore = lightFilter(rawMore);
-      rawMore = applyCategoryFilter(rawMore, plan.dateIdea, resolvedMode, plan.category);
-      const beforeBudgetFilterCount = rawMore.length;
-      console.log('[BudgetFilter] budget:', plan.budget, 'before:', beforeBudgetFilterCount);
-      const budgetFiltered = applyBudgetFilter(rawMore, plan.budget);
-      rawMore = budgetFiltered.length > 0 ? budgetFiltered : rawMore;
-
       rawMore = rawMore.filter(p => !isBlockedPlace(p));
-      console.log('[Block] expand passed:', rawMore.length);
 
-      const curatedMore = curateResults(rawMore, lat, lng);
-      
+      if (cfg.excludeKeywords?.length) {
+        rawMore = rawMore.filter(p => {
+          const n = (p.name || '').toLowerCase();
+          return !cfg.excludeKeywords.some(k => n.includes(k));
+        });
+      }
+
+      rawMore = rawMore.filter(p => p.rating != null && Number(p.rating) >= cfg.minRating);
+
+      if (category === 'activity') {
+        rawMore = diversifyActivities(rawMore);
+      }
+
+      const curatedMore = curateResults(rawMore);
+
       const moreResults = curatedMore
         .filter(p => !existingIds.has(p.id))
         .map((p) => {
           const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
           const distMiles  = distMeters / 1609.34;
-          console.log('[Distance]', p.name, distMeters);
           return {
             id:           p.id,
             name:         p.name,
@@ -902,11 +805,11 @@ export default function ResultsScreen() {
             types:        p.types || [],
             photoUrl:     p.photoUrl,
             location:     p.location,
-            priceLevel:     p.priceLevel ?? null,
-            openNow:        p.isOpenNow ?? null,
-            cuisine:        getCuisine(p.types || [], p.name || ''),
-            reviewSnippet:  null,
-            hoursToday:     null,
+            priceLevel:   p.priceLevel ?? null,
+            openNow:      p.isOpenNow ?? null,
+            cuisine:      getCuisine(p.types || [], p.name || ''),
+            reviewSnippet: null,
+            hoursToday:    null,
           };
         });
 
@@ -1012,8 +915,6 @@ export default function ResultsScreen() {
 
     // Save directly to Saved tab
     saveSinglePlace(place, {
-      group:    plan.group,
-      moment:   plan.moment,
       category: plan.category,
       city:     locationLabel,
     });
@@ -1035,8 +936,6 @@ export default function ResultsScreen() {
   function handleSave(place) {
     if (!place || savedIds.has(place.id)) return;
     saveSinglePlace(place, {
-      group:    plan.group,
-      moment:   plan.moment,
       category: plan.category,
       city:     locationLabel,
     });
@@ -1056,15 +955,7 @@ export default function ResultsScreen() {
           <Text style={s.sub}>Near {locationLabel || 'your location'} · sorted by rating</Text>
         </View>
 
-        {comingSoon ? (
-          <View style={s.center}>
-            <Text style={s.errorText}>🧩 Hidden Gems coming soon</Text>
-            <Text style={s.errorSub}>We're curating something special. Check back soon!</Text>
-            <TouchableOpacity style={s.retryBtn} onPress={() => router.back()} activeOpacity={0.8}>
-              <Text style={s.retryBtnText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
-        ) : loading ? (
+        {loading ? (
           <View style={s.loaderBody}>
             <RizzLoader embedded />
           </View>
@@ -1077,12 +968,12 @@ export default function ResultsScreen() {
           </View>
         ) : places.length === 0 ? (
           <View style={s.center}>
-            <Text style={s.errorText}>No results found in this area.</Text>
-            <Text style={s.errorSub}>Would you like to expand to nearby areas?</Text>
+            <Text style={s.errorText}>Not enough nearby.</Text>
+            <Text style={s.errorSub}>Tap Expand to see results from nearby areas.</Text>
             <TouchableOpacity style={s.retryBtn} onPress={expandSearch} activeOpacity={0.8} disabled={expandLoading}>
               {expandLoading
                 ? <ActivityIndicator size="small" color="#F2EDE8" />
-                : <Text style={s.retryBtnText}>Expand to nearby areas</Text>
+                : <Text style={s.retryBtnText}>Expand to Nearby Areas</Text>
               }
             </TouchableOpacity>
             <TouchableOpacity style={[s.retryBtn, { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.gray3 }]} onPress={() => router.back()} activeOpacity={0.8}>
@@ -1096,6 +987,26 @@ export default function ResultsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Text style={s.count}>{places.length} place{places.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
+
+            {/* ── Not enough nearby banner ── */}
+            {places.length < 3 && !expanded && (
+              <View style={s.expandBanner}>
+                <Text style={s.expandBannerText}>
+                  Not enough nearby. Tap Expand to see nearby areas.
+                </Text>
+                <TouchableOpacity
+                  style={s.expandBtn}
+                  onPress={expandSearch}
+                  activeOpacity={0.85}
+                  disabled={expandLoading}
+                >
+                  {expandLoading
+                    ? <ActivityIndicator size="small" color="#F2EDE8" />
+                    : <Text style={s.expandBtnText}>🔍 Expand to Nearby Areas</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* ── Top Picks ── */}
             {topPicks.length > 0 && (
@@ -1134,7 +1045,7 @@ export default function ResultsScreen() {
             ))}
 
             {/* ── Expand button at bottom of local results ── */}
-            {!expanded && places.length > 0 && (
+            {!expanded && places.length >= 3 && (
               <View style={s.expandBanner}>
                 <Text style={s.expandBannerText}>
                   Want to see more options from nearby areas?
