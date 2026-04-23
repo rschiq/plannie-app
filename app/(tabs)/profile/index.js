@@ -117,6 +117,19 @@ export default function ProfileScreen() {
           <Text style={styles.premPrice}>$4.99 / month · Cancel anytime</Text>
         </LinearGradient>
 
+        {/* ── Profile Header ── */}
+        <View style={styles.profileHeader}>
+          <View style={styles.profileHeaderIcon}>
+            <Text style={styles.profileHeaderIconText}>👫</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.profileHeaderTitle}>Your Couple Profile</Text>
+            <Text style={styles.profileHeaderSub}>
+              Manage your saved places, special dates, and shared plans
+            </Text>
+          </View>
+        </View>
+
         {/* ── Menu ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Your Account</Text>
@@ -145,7 +158,7 @@ export default function ProfileScreen() {
             icon="❤️"
             title="Couple Favorites"
             sub="Your go-to spots, saved"
-            onPress={() => router.push('/profile/couple-favorites')}
+            onPress={() => router_.push('/profile/couple-favorites')}
           />
           <ProfileRow
             icon="🔗"
@@ -212,46 +225,6 @@ export default function ProfileScreen() {
               onPress={() => router.push('/auth/welcome')}
             />
           )}
-        </View>
-
-        {/* ── Your Style ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Your Style</Text>
-          <View style={styles.styleCard}>
-            <Text style={styles.styleCardTitle}>Your Preferences</Text>
-            <Text style={styles.styleCardSub}>Used to personalise every date plan</Text>
-            <View style={styles.styleTags}>
-              {['Romantic', 'Chill', 'Fine Dining', 'Outdoor', 'Adventure'].map((tag) => (
-                <View key={tag} style={styles.styleTag}>
-                  <Text style={styles.styleTagText}>{tag}</Text>
-                </View>
-              ))}
-            </View>
-            <ProfileRow
-              icon="🎭"
-              title="Your Vibes"
-              sub="Romantic, Chill, Adventure..."
-              onPress={() => router.push('/profile/partner-details')}
-            />
-            <ProfileRow
-              icon="🍽️"
-              title="Food Preferences"
-              sub="Cuisine types you love"
-              onPress={() => router.push('/profile/partner-details')}
-            />
-            <ProfileRow
-              icon="🎯"
-              title="Activity Types"
-              sub="What gets you excited"
-              onPress={() => router.push('/profile/partner-details')}
-            />
-            <ProfileRow
-              icon="💑"
-              title="Partner Preferences"
-              sub="Personalise for your partner"
-              onPress={() => router.push('/profile/partner-details')}
-            />
-          </View>
         </View>
 
         {/* ── Footer ── */}
@@ -352,6 +325,31 @@ const styles = StyleSheet.create({
   },
 
   // ── Menu rows ─────────────────────────────────────────────
+  profileHeader: {
+    marginHorizontal: 20,
+    marginTop: 2,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: '#1C1628',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.24)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  profileHeaderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(201,169,110,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileHeaderIconText: { fontSize: 16 },
+  profileHeaderTitle: { fontFamily: fonts.display, fontSize: 20, color: '#F2EDE8', marginBottom: 2 },
+  profileHeaderSub: { fontFamily: fonts.body, fontSize: 12, color: 'rgba(242,237,232,0.72)', lineHeight: 17 },
   section:      { paddingHorizontal: 20, marginTop: 4 },
   sectionLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: colors.gray2, marginBottom: 12 },
 
@@ -371,11 +369,4 @@ const styles = StyleSheet.create({
   appInfoText:{ fontFamily: fonts.body, fontSize: 12, color: colors.gray3 },
   appInfoSub: { fontFamily: fonts.body, fontSize: 12, color: colors.gray3, marginTop: 4 },
 
-  // ── Your Style ────────────────────────────────────────────
-  styleCard:      { backgroundColor: colors.cream2, borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.gray4 },
-  styleCardTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, padding: 16, paddingBottom: 2 },
-  styleCardSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, paddingHorizontal: 16, paddingBottom: 12 },
-  styleTags:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingBottom: 12 },
-  styleTag:       { backgroundColor: 'rgba(201,169,110,0.12)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(201,169,110,0.22)' },
-  styleTagText:   { fontFamily: fonts.bodySemiBold, fontSize: 11, color: colors.gold },
 });

@@ -15,6 +15,8 @@ import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
 import PaywallModal from '../../components/PaywallModal';
+import { useSavedPlaces } from '../../hooks/useSavedPlaces';
+import ResultsPlaceCard from '../../components/ResultsPlaceCard';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 const SCREEN_W = Dimensions.get('window').width;
@@ -422,136 +424,6 @@ const det = StyleSheet.create({
   outlineBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.rose },
 });
 
-// ── Place Card ─────────────────────────────────────────────────
-function PlaceCard({ place, onPress, variant = 'default', rank }) {
-  const isTopPick = variant === 'top';
-  const priceStr  = place.priceLevel != null ? '$'.repeat(place.priceLevel + 1) : null;
-  return (
-    <TouchableOpacity
-      style={[card.wrap, isTopPick && card.wrapTop]}
-      onPress={onPress}
-      activeOpacity={0.88}
-    >
-      {/* Photo / placeholder */}
-      {place.photoUrl ? (
-        <Image source={{ uri: place.photoUrl }} style={card.photo} resizeMode="cover" />
-      ) : (
-        <View style={[card.photoPlaceholder, isTopPick && card.photoPlaceholderTop]}>
-          <Text style={card.photoIcon}>🍽️</Text>
-          <Text style={card.photoPlaceholderText}>Tap to see details</Text>
-        </View>
-      )}
-
-      {/* Rank badge over photo */}
-      {isTopPick && rank != null && (
-        <View style={card.rankBadge}>
-          <Text style={card.rankText}>#{rank}</Text>
-        </View>
-      )}
-
-      <View style={card.body}>
-        {/* Name + price */}
-        <View style={card.titleRow}>
-          <Text style={[card.name, isTopPick && card.nameTop]} numberOfLines={1}>{place.name}</Text>
-          {priceStr && <Text style={card.price}>{priceStr}</Text>}
-        </View>
-
-        {/* Row 1: rating + reviews + open status */}
-        <View style={card.metaRow}>
-          {place.rating && <Text style={card.rating}>⭐ {place.rating}</Text>}
-          {place.totalRatings > 0 && <Text style={card.reviews}>({place.totalRatings.toLocaleString()})</Text>}
-          {place.openNow != null && (
-            <Text style={[card.openTag, place.openNow ? card.openNow : card.closedNow]}>
-              {place.openNow ? '● Open' : '● Closed'}
-            </Text>
-          )}
-        </View>
-
-        {/* Row 2: cuisine tag + distance */}
-        {(place.cuisine || place.distance) && (
-          <View style={card.tagsRow}>
-            {place.cuisine && <Text style={card.cuisine}>{place.cuisine}</Text>}
-            {place.distance && <Text style={card.distance}>📍 {place.distance} mi away</Text>}
-          </View>
-        )}
-
-        {/* Address */}
-        {place.address ? <Text style={card.address} numberOfLines={1}>{place.address}</Text> : null}
-
-        {/* Hours */}
-        {place.hoursToday ? <Text style={card.hours} numberOfLines={1}>🕐 {place.hoursToday}</Text> : null}
-
-        {/* Review snippet */}
-        {place.reviewSnippet ? (
-          <Text style={card.review} numberOfLines={2}>"{place.reviewSnippet}"</Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const card = StyleSheet.create({
-  wrap: {
-    backgroundColor: colors.cream2,
-    borderRadius: 18,
-    marginBottom: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.gray4,
-    ...shadow.sm,
-  },
-  wrapTop: {
-    backgroundColor: colors.white,
-    borderColor: 'rgba(212,149,111,0.35)',
-    borderWidth: 1.5,
-    ...shadow.md,
-  },
-  photo: { width: '100%', height: 170 },
-  photoPlaceholder: {
-    width: '100%',
-    height: 110,
-    backgroundColor: colors.cream3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  photoPlaceholderTop: { backgroundColor: 'rgba(212,149,111,0.06)' },
-  photoIcon: { fontSize: 26, opacity: 0.5 },
-  photoPlaceholderText: { fontFamily: fonts.body, fontSize: 11, color: colors.gray3 },
-
-  rankBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: colors.rose,
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    ...shadow.rose,
-  },
-  rankText: { fontFamily: fonts.bodySemiBold, fontSize: 11, color: '#F2EDE8' },
-
-  body:    { padding: 16 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  name:    { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, flex: 1, marginRight: 8 },
-  nameTop: { fontSize: 17 },
-  price:   { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.gold },
-
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
-  rating:  { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gold },
-  reviews: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-  openTag: { fontFamily: fonts.bodyMedium, fontSize: 11, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
-  openNow:   { color: colors.green, backgroundColor: 'rgba(91,191,133,0.12)' },
-  closedNow: { color: colors.gray2, backgroundColor: colors.gray4 },
-
-  tagsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
-  cuisine:  { fontFamily: fonts.body, fontSize: 12, color: colors.rose, backgroundColor: 'rgba(212,149,111,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  distance: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2 },
-
-  address: { fontFamily: fonts.body, fontSize: 11, color: colors.gray3, marginBottom: 2 },
-  hours:   { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, marginTop: 2 },
-  review:  { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginTop: 6, fontStyle: 'italic', lineHeight: 17, opacity: 0.85 },
-});
 
 // ── Bottom Nav ─────────────────────────────────────────────────
 function BottomNav() {
@@ -602,6 +474,7 @@ export default function ResultsScreen() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [selectedCuisine, setSelectedCuisine] = useState(null);
+  const { saved, savePlace, removePlace } = useSavedPlaces();
 
   const enrichedRef = useRef(new Set());
 
@@ -611,6 +484,10 @@ export default function ResultsScreen() {
   const locationLabel = plan.location || '';
   const topPicks = places.slice(0, 5);
   const moreOptions = places.slice(5);
+  const showFavoritesOnCards =
+    category === 'food' ||
+    category === 'activity' ||
+    ['brunch_dinner', 'coffee_dessert', 'drinks', 'indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
 
   useEffect(() => { fetchPlaces(); }, []);
   useEffect(() => {
@@ -739,6 +616,20 @@ export default function ResultsScreen() {
     setSelected(place);
     setShowDetail(true);
   }
+
+  const isFavorite = (item) => {
+    return saved.some((p) => p.place_id === (item.place_id || item.id));
+  };
+
+  const toggleFavorite = (item) => {
+    const placeId = item.place_id || item.id;
+    if (!placeId) return;
+    if (saved.some((p) => p.place_id === placeId)) {
+      removePlace(placeId);
+    } else {
+      savePlace({ ...item, place_id: placeId });
+    }
+  };
 
   async function enrichTopPlaces(topPlaces) {
     const toEnrich = (topPlaces || []).filter(p => p.id && !enrichedRef.current.has(p.id));
@@ -1049,7 +940,15 @@ export default function ResultsScreen() {
                     <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
                   </View>
                 )}
-                <PlaceCard place={p} onPress={() => openDetail(p)} variant="top" rank={i + 1} />
+                <ResultsPlaceCard
+                  place={p}
+                  onPress={() => openDetail(p)}
+                  variant="top"
+                  rank={i + 1}
+                  isFavorite={isFavorite(p)}
+                  onToggleFavorite={toggleFavorite}
+                  showFavorite={showFavoritesOnCards}
+                />
               </View>
             ))}
 
@@ -1067,7 +966,15 @@ export default function ResultsScreen() {
                     <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
                   </View>
                 )}
-                <PlaceCard place={p} onPress={() => openDetail(p)} variant="default" rank={topPicks.length + i + 1} />
+                <ResultsPlaceCard
+                  place={p}
+                  onPress={() => openDetail(p)}
+                  variant="default"
+                  rank={topPicks.length + i + 1}
+                  isFavorite={isFavorite(p)}
+                  onToggleFavorite={toggleFavorite}
+                  showFavorite={showFavoritesOnCards}
+                />
               </View>
             ))}
 

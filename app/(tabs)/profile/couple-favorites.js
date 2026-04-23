@@ -1,78 +1,166 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, Keyboard,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal,
+  Image, ScrollView, Linking, Dimensions, FlatList, ToastAndroid, Platform, Alert, Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors, fonts, radius, shadow } from '../../../constants/theme';
+import { useFocusEffect } from '@react-navigation/native';
+import { colors, fonts } from '../../../constants/theme';
+import { getFavorites, removeFavorite } from '../../../services/favoritesStorage';
+import ResultsPlaceCard from '../../../components/ResultsPlaceCard';
 
-const STORAGE_KEY = '@plannie_couple_favorites';
+const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
+const SCREEN_W = Dimensions.get('window').width;
 
-const CATEGORIES = [
-  { key: 'restaurants', label: 'Favorite Restaurants', icon: '🍽️', placeholder: 'Add a restaurant…' },
-  { key: 'activities',  label: 'Favorite Activities',  icon: '🎯', placeholder: 'Add an activity…' },
-  { key: 'addons',      label: 'Favorite Add-ons',     icon: '🌹', placeholder: 'Add an add-on…' },
-];
+function buildPhotoUrl(ref, maxW = 600) {
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxW}&photoreference=${ref}&key=${GOOGLE_API_KEY}`;
+}
 
-const DEFAULT = { restaurants: [], activities: [], addons: [] };
+function openMaps(place) {
+  if (place.location?.lat) {
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${place.location.lat},${place.location.lng}&query_place_id=${place.place_id || place.id}`);
+  } else {
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`);
+  }
+}
 
-export default function CoupleFavoritesScreen() {
-  const [favorites, setFavorites] = useState(DEFAULT);
-  const [inputs, setInputs] = useState({ restaurants: '', activities: '', addons: '' });
-  const [loading, setLoading] = useState(true);
+function PlaceDetailSheet({ place, visible, onClose }) {
+  const insets = useSafeAreaInsets();
+  const [details, setDetails] = useState(null);
+  const [detLoad, setDetLoad] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then(raw => { if (raw) setFavorites(JSON.parse(raw)); })
-      .finally(() => setLoading(false));
+    if (!visible || !(place?.place_id || place?.id)) return;
+    const placeId = place.place_id || place.id;
+    setDetails(null);
+    setDetLoad(true);
+    fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,rating,user_ratings_total,formatted_address,formatted_phone_number,website,photos,opening_hours,reviews&key=${GOOGLE_API_KEY}`
+    )
+      .then((res) => res.json())
+      .then((data) => { if (data.result) setDetails(data.result); })
+      .catch(() => {})
+      .finally(() => setDetLoad(false));
+  }, [visible, place?.place_id, place?.id]);
+
+  if (!place) return null;
+
+  const photos = details?.photos || [];
+  const address = details?.formatted_address || place.vicinity || place.formatted_address || place.address;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={det.overlay}>
+        <View style={det.sheet}>
+          <View style={det.handle} />
+          <TouchableOpacity style={det.closeBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={det.closeText}>✕</Text>
+          </TouchableOpacity>
+
+          {detLoad ? (
+            <View style={det.photoPlaceholder}>
+              <ActivityIndicator size="small" color={colors.rose} />
+            </View>
+          ) : photos.length > 0 ? (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={det.photoScroll}>
+              {photos.slice(0, 5).map((ph, i) => (
+                <Image key={i} source={{ uri: buildPhotoUrl(ph.photo_reference) }} style={[det.photo, { width: SCREEN_W }]} resizeMode="cover" />
+              ))}
+            </ScrollView>
+          ) : place.photoUrl ? (
+            <Image source={{ uri: place.photoUrl }} style={[det.photo, { width: SCREEN_W }]} resizeMode="cover" />
+          ) : (
+            <View style={det.photoPlaceholder}><Text style={det.photoIcon}>📍</Text></View>
+          )}
+
+          <ScrollView
+            style={det.body}
+            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 18, 26) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={det.name}>{place.name}</Text>
+            {(place.type || place.category) ? <Text style={det.category}>{place.type || place.category}</Text> : null}
+
+            {place.rating && (
+              <View style={det.ratingRow}>
+                <Text style={det.rating}>⭐ {place.rating}</Text>
+                {place.totalRatings > 0 && (
+                  <Text style={det.reviews}>({place.totalRatings.toLocaleString()} reviews)</Text>
+                )}
+              </View>
+            )}
+
+            {address ? (
+              <View style={det.row}>
+                <Text style={det.rowIcon}>📍</Text>
+                <Text style={det.rowText}>{address}</Text>
+              </View>
+            ) : null}
+
+            <View style={det.divider} />
+
+            <TouchableOpacity style={det.outlineBtn} onPress={() => openMaps(place)} activeOpacity={0.88}>
+              <Text style={det.outlineBtnText}>🗺️ Open in Maps</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export default function CoupleFavoritesScreen() {
+  const insets = useSafeAreaInsets();
+  const [favorites, setFavorites] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
+  const [animatedRemovingId, setAnimatedRemovingId] = useState(null);
+  const [removeAnim] = useState(() => new Animated.Value(1));
+
+  const loadFavorites = useCallback(async () => {
+    setLoading(true);
+    const data = await getFavorites();
+    setFavorites(data);
+    setLoading(false);
   }, []);
 
-  const persist = async (updated) => {
+  useFocusEffect(
+    useCallback(() => {
+      loadFavorites();
+    }, [loadFavorites])
+  );
+
+  const handleRemove = async (placeId) => {
+    setRemovingId(placeId);
+    setAnimatedRemovingId(placeId);
+    removeAnim.setValue(1);
+    await new Promise((resolve) => {
+      Animated.timing(removeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => resolve());
+    });
+    const updated = await removeFavorite(placeId);
     setFavorites(updated);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    setRemovingId(null);
+    setAnimatedRemovingId(null);
+    removeAnim.setValue(1);
+    const msg = 'Removed from Favorites';
+    if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
+    else Alert.alert('', msg);
   };
 
-  const handleAdd = async (catKey) => {
-    const val = inputs[catKey].trim();
-    if (!val) return;
-    const updated = { ...favorites, [catKey]: [...favorites[catKey], val] };
-    setInputs(prev => ({ ...prev, [catKey]: '' }));
-    Keyboard.dismiss();
-    await persist(updated);
+  const openDetail = (place) => {
+    setSelected(place);
+    setShowDetail(true);
   };
-
-  const handleRemove = (catKey, index) => {
-    Alert.alert(
-      'Remove Item',
-      `Remove "${favorites[catKey][index]}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            const next = [...favorites[catKey]];
-            next.splice(index, 1);
-            await persist({ ...favorites, [catKey]: next });
-          },
-        },
-      ]
-    );
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.centered}><ActivityIndicator color={colors.gold2} /></View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Text style={styles.backArrow}>‹</Text>
@@ -81,78 +169,53 @@ export default function CoupleFavoritesScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.hint}>
-          Save your go-to spots and ideas — Plannie uses these to inspire your dates ❤️
-        </Text>
-
-        {CATEGORIES.map(cat => (
-          <View key={cat.key} style={styles.catCard}>
-
-            {/* Category Header */}
-            <View style={styles.catHeader}>
-              <Text style={styles.catIcon}>{cat.icon}</Text>
-              <Text style={styles.catTitle}>{cat.label}</Text>
-              {favorites[cat.key].length > 0 && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countText}>{favorites[cat.key].length}</Text>
-                </View>
-              )}
-            </View>
-
-            {/* Items */}
-            {favorites[cat.key].length === 0 ? (
-              <Text style={styles.emptyText}>Nothing saved yet — add your first one!</Text>
-            ) : (
-              favorites[cat.key].map((item, idx) => (
-                <View
-                  key={`${item}-${idx}`}
-                  style={[
-                    styles.favItem,
-                    idx < favorites[cat.key].length - 1 && styles.favItemBorder,
-                  ]}
-                >
-                  <Text style={styles.favDot}>•</Text>
-                  <Text style={styles.favText} numberOfLines={1}>{item}</Text>
-                  <TouchableOpacity
-                    onPress={() => handleRemove(cat.key, idx)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.removeBtn}>−</Text>
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
-
-            {/* Add Row */}
-            <View style={styles.addRow}>
-              <TextInput
-                style={styles.addInput}
-                placeholder={cat.placeholder}
-                placeholderTextColor={colors.gray3}
-                value={inputs[cat.key]}
-                onChangeText={val => setInputs(prev => ({ ...prev, [cat.key]: val }))}
-                returnKeyType="done"
-                onSubmitEditing={() => handleAdd(cat.key)}
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.gold2} />
+        </View>
+      ) : favorites.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>No favorites yet ❤️</Text>
+          <Text style={styles.emptySubText}>Start saving places you love</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={favorites}
+          keyExtractor={(item) => item.place_id}
+          ListHeaderComponent={<Text style={styles.listSubText}>Saved for your next date</Text>}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom + 30, 42) }}
+          renderItem={({ item }) => (
+            <Animated.View
+              style={[
+                styles.itemWrap,
+                animatedRemovingId === item.place_id
+                  ? {
+                      opacity: removeAnim,
+                      transform: [{ scale: removeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }],
+                    }
+                  : null,
+                removingId === item.place_id && styles.itemWrapRemoving,
+              ]}
+            >
+              <ResultsPlaceCard
+                place={item}
+                onPress={() => openDetail(item)}
+                variant="default"
+                showFavorite
+                isFavorite
+                onToggleFavorite={() => handleRemove(item.place_id)}
               />
-              <TouchableOpacity
-                style={[styles.addBtn, !inputs[cat.key].trim() && styles.addBtnDisabled]}
-                onPress={() => handleAdd(cat.key)}
-                activeOpacity={0.8}
-                disabled={!inputs[cat.key].trim()}
-              >
-                <Text style={styles.addBtnText}>Add</Text>
-              </TouchableOpacity>
-            </View>
+            </Animated.View>
+          )}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-          </View>
-        ))}
-      </ScrollView>
+      <PlaceDetailSheet
+        place={selected}
+        visible={showDetail}
+        onClose={() => setShowDetail(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -160,8 +223,6 @@ export default function CoupleFavoritesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { flex: 1 },
-
   header: {
     backgroundColor: colors.charcoal,
     flexDirection: 'row',
@@ -183,90 +244,44 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display, fontSize: 22,
     color: colors.cream, flex: 1, textAlign: 'center',
   },
-
-  hint: {
-    fontFamily: fonts.body, fontSize: 13,
-    color: colors.gray2, textAlign: 'center',
-    marginVertical: 24, lineHeight: 20,
-  },
-
-  catCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    marginBottom: 16,
-    ...shadow.sm,
-  },
-  catHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: colors.cream2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.cream3,
-  },
-  catIcon: { fontSize: 18 },
-  catTitle: {
-    fontFamily: fonts.bodyMedium, fontSize: 14,
-    color: colors.charcoal, flex: 1,
-  },
-  countBadge: {
-    backgroundColor: 'rgba(168,132,62,0.15)',
-    borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 2,
-  },
-  countText: {
-    fontFamily: fonts.bodySemiBold, fontSize: 12,
-    color: colors.gold2,
-  },
-
   emptyText: {
-    fontFamily: fonts.body, fontSize: 13,
-    color: colors.gray3, textAlign: 'center',
-    paddingVertical: 16,
+    fontFamily: fonts.body,
+    fontSize: 17,
+    color: colors.gray2,
+    marginBottom: 6,
   },
-  favItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
+  emptySubText: { fontFamily: fonts.body, fontSize: 13, color: colors.gray3 },
+  listSubText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.gray2,
+    marginBottom: 10,
+    marginLeft: 2,
   },
-  favItemBorder: {
-    borderBottomWidth: 1, borderBottomColor: colors.cream2,
-  },
-  favDot: { fontSize: 14, color: colors.gold2 },
-  favText: {
-    fontFamily: fonts.body, fontSize: 14,
-    color: colors.charcoal, flex: 1,
-  },
-  removeBtn: { fontSize: 22, color: colors.rose, lineHeight: 24 },
+  itemWrap: { opacity: 1, transform: [{ scale: 1 }] },
+  itemWrapRemoving: { opacity: 0.35, transform: [{ scale: 0.97 }] },
+});
 
-  addRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.cream2,
-    backgroundColor: colors.cream,
-  },
-  addInput: {
-    flex: 1,
-    fontFamily: fonts.body, fontSize: 14,
-    color: colors.charcoal,
-    paddingVertical: 6, paddingHorizontal: 4,
-  },
-  addBtn: {
-    backgroundColor: colors.gold2,
-    borderRadius: radius.sm,
-    paddingHorizontal: 18, paddingVertical: 8,
-  },
-  addBtnDisabled: { opacity: 0.4 },
-  addBtnText: {
-    fontFamily: fonts.bodyMedium, fontSize: 13,
-    color: colors.white,
-  },
+const det = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', overflow: 'hidden' },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginTop: 12 },
+  closeBtn: { position: 'absolute', top: 10, right: 10, zIndex: 4, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.22)' },
+  closeText: { fontFamily: fonts.bodyMedium, fontSize: 18, color: '#F2EDE8', lineHeight: 20 },
+  photoScroll: { height: 220, width: SCREEN_W },
+  photo: { height: 220 },
+  photoPlaceholder: { height: 120, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
+  photoIcon: { fontSize: 40 },
+  body: { paddingHorizontal: 18, paddingTop: 16 },
+  name: { fontFamily: fonts.display, fontSize: 19, color: colors.charcoal, marginBottom: 2, marginTop: 4 },
+  category: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 7 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 },
+  rating: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gold },
+  reviews: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginBottom: 5 },
+  rowIcon: { fontSize: 13, marginTop: 1 },
+  rowText: { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 17 },
+  divider: { height: 1, backgroundColor: colors.gray4, marginVertical: 10 },
+  outlineBtn: { borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1.5, borderColor: colors.rose },
+  outlineBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.rose },
 });

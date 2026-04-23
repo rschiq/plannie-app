@@ -170,6 +170,10 @@ export function PlanProvider({ children }) {
       budget:      plan.budget || '$$',
       items,
       favorite:    false,
+      isSpecialDate: false,
+      specialDateConfigured: false,
+      specialDateNote: '',
+      specialDateDate: '',
       note:        '',
       rating:      0,
       favoriteMoment: '',
@@ -206,6 +210,10 @@ export function PlanProvider({ children }) {
       budget:      '$$',
       items:       [`${emoji} ${place.name}`, place.address].filter(Boolean),
       favorite:    false,
+      isSpecialDate: false,
+      specialDateConfigured: false,
+      specialDateNote: '',
+      specialDateDate: '',
       note:        '',
       rating:      0,
       favoriteMoment: '',
@@ -237,6 +245,28 @@ export function PlanProvider({ children }) {
       prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p))
     );
 
+  const toggleSpecialDate = (id) =>
+    setSavedPlans((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const nextIsSpecial = !p.isSpecialDate;
+        if (!nextIsSpecial) {
+          return {
+            ...p,
+            isSpecialDate: false,
+            specialDateConfigured: false,
+            specialDateNote: '',
+            specialDateDate: '',
+          };
+        }
+        return {
+          ...p,
+          isSpecialDate: true,
+          specialDateConfigured: false,
+        };
+      })
+    );
+
   // ─── Update memory fields (note / rating / favoriteMoment) ─
   const updatePlanMeta = (id, updates) =>
     setSavedPlans((prev) =>
@@ -261,6 +291,7 @@ export function PlanProvider({ children }) {
 
   const getBaseHour = () => plan.time ? parseInt(plan.time.split(':')[0]) : 17;
   const getBaseMin  = () => plan.time ? parseInt(plan.time.split(':')[1]) : 0;
+  const specialDates = savedPlans.filter((p) => p.isSpecialDate);
 
   return (
     <PlanContext.Provider
@@ -273,6 +304,8 @@ export function PlanProvider({ children }) {
         deletePlan,
         saveSinglePlace,
         toggleFavorite,
+        toggleSpecialDate,
+        specialDates,
         updatePlanMeta,   // ✅ new
         generatePlan,
         getTimeLabel,
