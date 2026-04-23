@@ -51,10 +51,15 @@ export default function DateIdeaScreen() {
             activeOpacity={0.85}
           >
             <Text style={s.cardEmoji}>{option.emoji}</Text>
-            <Text style={s.cardLabel}>{option.label}</Text>
+            <View style={s.cardText}>
+              <Text style={[s.cardLabel, selected === option.key && s.cardLabelActive]}>{option.label}</Text>
+            </View>
+            {selected === option.key && <View style={s.checkDot} />}
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={{ flex: 1 }} />
 
     </SafeAreaView>
   );
@@ -68,23 +73,25 @@ const s = StyleSheet.create({
   step: { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
   title: { fontFamily: fonts.display, fontSize: 32, color: colors.charcoal, lineHeight: 38 },
   grid: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 20,
-    gap: 14,
-    alignContent: 'center',
+    paddingTop: 8,
+    paddingBottom: 20,
+    gap: 12,
   },
   card: {
-    width: '47%',
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.cream2,
     borderRadius: radius.md,
-    padding: 22,
-    alignItems: 'center',
+    padding: 16,
     borderWidth: 2,
     borderColor: colors.gray4,
+    position: 'relative',
   },
-  cardActive: { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.06)' },
-  cardEmoji: { fontSize: 36, marginBottom: 8 },
-  cardLabel: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal, textAlign: 'center' },
+  cardActive:      { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.06)' },
+  cardEmoji:       { fontSize: 28, marginRight: 14 },
+  cardText:        { flex: 1 },
+  cardLabel:       { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal },
+  cardLabelActive: { color: colors.rose },
+  checkDot:        { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.rose },
 });

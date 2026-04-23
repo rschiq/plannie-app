@@ -66,6 +66,16 @@ const SUBCATEGORY_CONFIG = {
   },
 };
 
+// ── Cuisine tabs (brunch_dinner only) ─────────────────────────
+const CUISINE_TABS = [
+  { key: 'japanese',  label: 'Japanese',  keyword: 'japanese restaurant OR sushi' },
+  { key: 'korean',    label: 'Korean',    keyword: 'korean restaurant OR kbbq' },
+  { key: 'chinese',   label: 'Chinese',   keyword: 'chinese restaurant' },
+  { key: 'italian',   label: 'Italian',   keyword: 'italian restaurant OR pizza' },
+  { key: 'mexican',   label: 'Mexican',   keyword: 'mexican restaurant OR tacos' },
+  { key: 'american',  label: 'American',  keyword: 'american grill OR steakhouse OR burger' },
+];
+
 function getSubcategoryConfig(category, dateIdea) {
   const key = dateIdea;
   if (SUBCATEGORY_CONFIG[key]) return SUBCATEGORY_CONFIG[key];
@@ -590,6 +600,7 @@ export default function ResultsScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [selectedCuisine, setSelectedCuisine] = useState(null);
 
   const enrichedRef = useRef(new Set());
 
@@ -607,8 +618,19 @@ export default function ResultsScreen() {
     }
   }, [places]);
 
+  // ── Cuisine select — refetch with new keyword ────────────────
+  function handleCuisineSelect(key) {
+    const next = key === selectedCuisine ? null : key;
+    const tab  = CUISINE_TABS.find(t => t.key === next);
+    setSelectedCuisine(next);
+    setPlaces([]);
+    setExpanded(false);
+    enrichedRef.current = new Set();
+    fetchPlaces(tab?.keyword ?? null);
+  }
+
   // ── Fetch ────────────────────────────────────────────────────
-  async function fetchPlaces() {
+  async function fetchPlaces(cuisineKeyword = null) {
     setLoading(true);
     setError(null);
     const startTime = Date.now();
@@ -646,7 +668,7 @@ export default function ResultsScreen() {
       let raw = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
         radius: fetchRadius,
         maxResults: 30,
-        keyword: cfg.keyword || undefined,
+        keyword: cuisineKeyword || cfg.keyword || undefined,
       });
 
       raw = lightFilter(raw);
@@ -955,6 +977,30 @@ export default function ResultsScreen() {
           <Text style={s.sub}>Near {locationLabel || 'your location'} · sorted by rating</Text>
         </View>
 
+        {/* ── Cuisine tabs — brunch/dinner only ── */}
+        {plan.dateIdea === 'brunch_dinner' && (
+          <View style={s.cuisineTabsWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.cuisineTabsContent}
+            >
+              {CUISINE_TABS.map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[s.cuisineTab, selectedCuisine === t.key && s.cuisineTabActive]}
+                  onPress={() => handleCuisineSelect(t.key)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[s.cuisineTabText, selectedCuisine === t.key && s.cuisineTabTextActive]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {loading ? (
           <View style={s.loaderBody}>
             <RizzLoader embedded />
@@ -987,26 +1033,6 @@ export default function ResultsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Text style={s.count}>{places.length} place{places.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
-
-            {/* ── Not enough nearby banner (not shown for movies — expand goes at bottom) ── */}
-            {places.length < 3 && !expanded && plan.dateIdea !== 'movies' && (
-              <View style={s.expandBanner}>
-                <Text style={s.expandBannerText}>
-                  Not enough nearby. Tap Expand to see nearby areas.
-                </Text>
-                <TouchableOpacity
-                  style={s.expandBtn}
-                  onPress={expandSearch}
-                  activeOpacity={0.85}
-                  disabled={expandLoading}
-                >
-                  {expandLoading
-                    ? <ActivityIndicator size="small" color="#F2EDE8" />
-                    : <Text style={s.expandBtnText}>🔍 Expand to Nearby Areas</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            )}
 
             {/* ── Top Picks ── */}
             {topPicks.length > 0 && (
@@ -1045,10 +1071,12 @@ export default function ResultsScreen() {
             ))}
 
             {/* ── Expand button at bottom of local results ── */}
-            {!expanded && (places.length >= 3 || plan.dateIdea === 'movies') && (
-              <View style={s.expandBanner}>
+            {!expanded && (
+              <View style={[s.expandBanner, { marginTop: places.length < 3 ? 16 : 24 }]}>
                 <Text style={s.expandBannerText}>
-                  Want to see more options from nearby areas?
+                  {places.length < 3
+                    ? 'Not enough nearby. Tap Expand to see nearby areas.'
+                    : 'Want to see more options from nearby areas?'}
                 </Text>
                 <TouchableOpacity
                   style={s.expandBtn}
@@ -1320,4 +1348,12 @@ const s = StyleSheet.create({
   searchAddBtnText:    { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#F2EDE8' },
   searchCancelBtn:     { marginHorizontal: 20, marginTop: 8, borderRadius: 999, paddingVertical: 14, alignItems: 'center', borderWidth: 1.5, borderColor: colors.gray4 },
   searchCancelText:    { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gray2 },
+
+  // ── Cuisine tabs ─────────────────────────────────────────────
+  cuisineTabsWrapper: { height: 48, borderBottomWidth: 1, borderBottomColor: colors.gray4, justifyContent: 'center' },
+  cuisineTabsContent: { paddingHorizontal: 20, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  cuisineTab:         { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: colors.gray4, backgroundColor: colors.cream2 },
+  cuisineTabActive:   { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.10)' },
+  cuisineTabText:     { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gray2 },
+  cuisineTabTextActive: { color: colors.rose },
 });

@@ -72,6 +72,13 @@ export default function CategoryScreen() {
         })}
       </View>
 
+      {/* OR divider */}
+      <View style={s.orRow}>
+        <View style={s.orLine} />
+        <Text style={s.orText}>OR</Text>
+        <View style={s.orLine} />
+      </View>
+
       {/* Choose For Me */}
       <View style={s.cfmWrap}>
         <TouchableOpacity
@@ -90,6 +97,8 @@ export default function CategoryScreen() {
           <Text style={s.cfmChevron}>→</Text>
         </TouchableOpacity>
       </View>
+
+      <View style={{ flex: 1 }} />
 
       {/* Continue */}
       <View style={[s.footer, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
@@ -117,29 +126,33 @@ const s = StyleSheet.create({
   titleAccent: { fontFamily: fonts.displayItalic, color: colors.rose },
 
   grid: {
-    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
     gap: 14,
-    alignContent: 'center',
   },
   card: {
     width: '47%',
     backgroundColor: colors.cream2,
     borderRadius: radius.md,
-    padding: 22,
+    padding: 18,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: colors.gray4,
     position: 'relative',
   },
   cardActive:      { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.06)' },
-  cardEmoji:       { fontSize: 40, marginBottom: 10 },
-  cardLabel:       { fontFamily: fonts.bodySemiBold, fontSize: 17, color: colors.charcoal, marginBottom: 4 },
+  cardEmoji:       { fontSize: 32, marginBottom: 8 },
+  cardLabel:       { fontFamily: fonts.bodySemiBold, fontSize: 16, color: colors.charcoal, marginBottom: 4 },
   cardLabelActive: { color: colors.rose },
   cardSub:         { fontFamily: fonts.body, fontSize: 11, color: colors.gray2, textAlign: 'center' },
   checkDot:        { position: 'absolute', top: 12, right: 12, width: 12, height: 12, borderRadius: 6, backgroundColor: colors.rose },
+
+  orRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 },
+  orLine: { flex: 1, height: 1, backgroundColor: colors.gray4 },
+  orText: { fontFamily: fonts.bodyMedium, fontSize: 11, color: colors.gray2, marginHorizontal: 12, letterSpacing: 1.5 },
 
   cfmWrap: { paddingHorizontal: 20, paddingBottom: 12 },
   cfmCard: {
