@@ -258,9 +258,12 @@ function PlaceDetailSheet({ place, visible, onClose, onSave, isSaved }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={det.overlay}>
-        <View style={[det.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View style={det.overlay} pointerEvents="box-none">
+        <View style={det.sheet}>
           <View style={det.handle} />
+          <TouchableOpacity style={det.closeBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={det.closeText}>✕</Text>
+          </TouchableOpacity>
 
           {/* ── Photos — swipeable ── */}
           {detLoad ? (
@@ -290,7 +293,11 @@ function PlaceDetailSheet({ place, visible, onClose, onSave, isSaved }) {
             <View style={det.photoPlaceholder}><Text style={det.photoIcon}>📍</Text></View>
           )}
 
-          <ScrollView style={det.body} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={det.body}
+            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 18, 26) }}
+            showsVerticalScrollIndicator={false}
+          >
             {/* Name + category */}
             <Text style={det.name}>{place.name}</Text>
             {place.category ? <Text style={det.category}>{place.category}</Text> : null}
@@ -378,11 +385,6 @@ function PlaceDetailSheet({ place, visible, onClose, onSave, isSaved }) {
             <TouchableOpacity style={det.outlineBtn} onPress={() => openMaps(place)} activeOpacity={0.88}>
               <Text style={det.outlineBtnText}>🗺️ Open in Maps</Text>
             </TouchableOpacity>
-
-            {/* Back */}
-            <TouchableOpacity style={det.ghostBtn} onPress={onClose} activeOpacity={0.8}>
-              <Text style={det.ghostBtnText}>← Back to Results</Text>
-            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
@@ -394,21 +396,23 @@ const det = StyleSheet.create({
   overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet:        { backgroundColor: colors.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', overflow: 'hidden' },
   handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.gray3, alignSelf: 'center', marginTop: 12 },
+  closeBtn:     { position: 'absolute', top: 10, right: 10, zIndex: 4, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.22)' },
+  closeText:    { fontFamily: fonts.bodyMedium, fontSize: 18, color: '#F2EDE8', lineHeight: 20 },
   photoScroll:  { height: 220, width: SCREEN_W },
   photo:        { height: 220 },
   photoPlaceholder: { height: 120, backgroundColor: colors.gray4, alignItems: 'center', justifyContent: 'center' },
   photoIcon:    { fontSize: 40 },
-  body:         { padding: 20 },
-  name:         { fontFamily: fonts.display, fontSize: 24, color: colors.charcoal, marginBottom: 4, marginTop: 8 },
-  category:     { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 10 },
-  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  rating:       { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.gold },
+  body:         { paddingHorizontal: 18, paddingTop: 16 },
+  name:         { fontFamily: fonts.display, fontSize: 19, color: colors.charcoal, marginBottom: 2, marginTop: 4 },
+  category:     { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, marginBottom: 7 },
+  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 },
+  rating:       { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.gold },
   reviews:      { fontFamily: fonts.body, fontSize: 13, color: colors.gray2 },
-  row:          { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
-  rowIcon:      { fontSize: 14, marginTop: 1 },
-  rowText:      { fontFamily: fonts.body, fontSize: 14, color: colors.gray, flex: 1, lineHeight: 20 },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginBottom: 5 },
+  rowIcon:      { fontSize: 13, marginTop: 1 },
+  rowText:      { fontFamily: fonts.body, fontSize: 13, color: colors.gray, flex: 1, lineHeight: 17 },
   rowLink:      { color: colors.rose, textDecorationLine: 'underline' },
-  divider:      { height: 1, backgroundColor: colors.gray4, marginVertical: 16 },
+  divider:      { height: 1, backgroundColor: colors.gray4, marginVertical: 10 },
   // Save — primary gold action
   primaryBtn:      { backgroundColor: colors.rose, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginBottom: 10 },
   primaryBtnSaved: { backgroundColor: colors.gray3 },
@@ -416,9 +420,6 @@ const det = StyleSheet.create({
   // Maps — outline
   outlineBtn:     { borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1.5, borderColor: colors.rose },
   outlineBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.rose },
-  // Back — ghost
-  ghostBtn:     { borderRadius: 999, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: colors.gray4, backgroundColor: colors.cream2 },
-  ghostBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal },
 });
 
 // ── Place Card ─────────────────────────────────────────────────
@@ -970,7 +971,7 @@ export default function ResultsScreen() {
       <SafeAreaView style={s.safe} edges={['top']}>
         {/* Header */}
         <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => (showDetail ? setShowDetail(false) : router.back())} style={s.backBtn} activeOpacity={0.7}>
             <Text style={s.backText}>← Back</Text>
           </TouchableOpacity>
           <Text style={s.title}>{label}</Text>

@@ -45,7 +45,13 @@
     },
     "scheme": "plannie",
     "plugins": [
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Plannie adds your date plans to your calendar."
+        }
+      ]
     ],
     "extra": {
       "router": {},

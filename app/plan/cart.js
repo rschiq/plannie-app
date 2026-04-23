@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Calendar from 'expo-calendar';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import { ACTIVITIES, RESTAURANTS, ADDONS } from '../../data';
@@ -1128,11 +1129,39 @@ export default function CartScreen() {
     Share.share({ message: lines.join('\n') });
   }
 
-  function handleCalendar() {
-    const title = encodeURIComponent(plan.vibe ? `${plan.vibe} Date Night` : 'Plannie Date Night');
-    const loc = encodeURIComponent(plan.city || '');
-    const url   = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${encodeURIComponent('Planned with Plannie 💕')}`;
-    Linking.openURL(url).catch(() => Alert.alert('Could not open Calendar'));
+  async function handleCalendar() {
+    const baseStart = plan?.date
+      ? new Date(`${plan.date}T19:00:00`)
+      : new Date(Date.now() + 60 * 60 * 1000);
+    const startDate = Number.isNaN(baseStart.getTime())
+      ? new Date(Date.now() + 60 * 60 * 1000)
+      : baseStart;
+    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+
+    const eventData = {
+      title: plan?.title || 'Plannie Date Night',
+      location: plan?.city || '',
+      notes: 'Planned with Plannie 💕',
+      startDate,
+      endDate,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+
+    const title = encodeURIComponent(eventData.title);
+    const loc = encodeURIComponent(eventData.location);
+    const details = encodeURIComponent(eventData.notes);
+    const dates = `${startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}/${endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`;
+    const fallbackUrl = `https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${loc}&details=${details}&dates=${dates}`;
+
+    try {
+      if (typeof Calendar.createEventInCalendarAsync === 'function') {
+        await Calendar.createEventInCalendarAsync(eventData);
+        return;
+      }
+      await Linking.openURL(fallbackUrl);
+    } catch {
+      Linking.openURL(fallbackUrl).catch(() => Alert.alert('Could not open Calendar'));
+    }
   }
 
   return (
@@ -1231,7 +1260,7 @@ export default function CartScreen() {
               <Text style={styles.btnPrimaryText}>🔗 Share Plan</Text>
             </TouchableOpacity>
             <View style={styles.rowActions}>
-              <TouchableOpacity style={styles.btnSecondary} onPress={handleCalendar} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.btnSecondary} onPress={() => void handleCalendar()} activeOpacity={0.8}>
                 <Text style={styles.btnSecondaryText}>📅 Add to Calendar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnSecondary} onPress={() => router.replace('/(tabs)')} activeOpacity={0.8}>
