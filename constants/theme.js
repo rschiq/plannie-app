@@ -59,6 +59,13 @@ export const fonts = {
 
 export const radius = { sm: 12, md: 20, lg: 28, xl: 40, full: 999 };
 
+export const type = {
+  titleLarge:  22,
+  titleMedium: 18,
+  body:        14,
+  caption:     12,
+};
+
 export const shadow = {
   // Deep blacks — cards feel like they float above the dark bg
   sm: {

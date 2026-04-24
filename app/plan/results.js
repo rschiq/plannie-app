@@ -468,20 +468,48 @@ const nav = StyleSheet.create({
   tabLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.gray2 },
 });
 
+// ── View builder ───────────────────────────────────────────────
+function buildVisibleResults(fullResults, expanded) {
+  const grouped = {};
+  fullResults.forEach(place => {
+    const cat = place.activityCategory || 'other';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(place);
+  });
+
+  const categoryCount = Object.keys(grouped).length;
+
+  // Single-category data (food, drinks, etc.) — flat slice
+  if (categoryCount <= 1) {
+    return fullResults.slice(0, expanded ? 10 : 5);
+  }
+
+  // Multi-category data (activities) — 1 per category; 2nd tier when expanded
+  const results = [];
+  Object.keys(grouped).forEach(cat => {
+    if (grouped[cat][0]) results.push(grouped[cat][0]);
+  });
+  if (expanded) {
+    Object.keys(grouped).forEach(cat => {
+      if (grouped[cat][1]) results.push(grouped[cat][1]);
+    });
+  }
+  return results.slice(0, 10);
+}
+
 // ── Main Screen ────────────────────────────────────────────────
 export default function ResultsScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
   const { plan, saveSinglePlace } = usePlan();
 
-  const [places,     setPlaces]     = useState([]);
+  const [fullResults, setFullResults] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
   const [selected,   setSelected]   = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [savedIds,   setSavedIds]   = useState(new Set());
-  const [expanded,      setExpanded]      = useState(false);
-  const [expandLoading, setExpandLoading] = useState(false);
+  const [expanded,   setExpanded]   = useState(false);
   const [showSearch,    setShowSearch]    = useState(false);
   const [searchQuery,   setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -496,23 +524,13 @@ export default function ResultsScreen() {
   const subcategoryConfig = getSubcategoryConfig(category, plan.dateIdea);
   const label = subcategoryConfig.displayTitle;
   const locationLabel = plan.location || '';
-  const topPicks = places.slice(0, 5);
-  const moreOptions = places.slice(5);
-  const brunchKeyword =
-    plan.dateIdea === 'brunch_dinner' && selectedCuisine
-      ? CUISINE_TABS.find((t) => t.key === selectedCuisine)?.keyword
-      : null;
+  const visibleResults = buildVisibleResults(fullResults, expanded);
+  const topPicks    = visibleResults.slice(0, 3);
+  const moreOptions = visibleResults.slice(3);
   const showFavoritesOnCards =
     category === 'food' ||
     category === 'activity' ||
     ['brunch_dinner', 'coffee_dessert', 'drinks', 'indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
-
-  const activityKeywordAreaEmpty =
-    !loading &&
-    !error &&
-    places.length === 0 &&
-    !!subcategoryConfig.useActivityKeywordSearch &&
-    !expanded;
 
   useEffect(() => { fetchPlaces(); }, []);
 
@@ -521,7 +539,7 @@ export default function ResultsScreen() {
     const next = key === selectedCuisine ? null : key;
     const tab  = CUISINE_TABS.find(t => t.key === next);
     setSelectedCuisine(next);
-    setPlaces([]);
+    setFullResults([]);
     setExpanded(false);
     enrichedRef.current = new Set();
     fetchPlaces(tab?.keyword ?? null);
@@ -659,8 +677,9 @@ export default function ResultsScreen() {
         };
       });
 
-      setPlaces(mapped);
-      enrichTopPlaces(mapped);
+      setFullResults(mapped);
+      setExpanded(false);
+      enrichTopPlaces(mapped.slice(0, 10));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
@@ -703,7 +722,7 @@ export default function ResultsScreen() {
         const r = data.result;
         const day = new Date().getDay();
         const idx = day === 0 ? 6 : day - 1;
-        setPlaces(prev => prev.map(p => p.id !== place.id ? p : {
+        setFullResults(prev => prev.map(p => p.id !== place.id ? p : {
           ...p,
           openNow:       r.opening_hours?.open_now ?? p.openNow,
           hoursToday:    r.opening_hours?.weekday_text?.[idx] || p.hoursToday,
@@ -715,139 +734,9 @@ export default function ResultsScreen() {
     }
   }
 
-  // ── Expand to nearby areas (wider radius; new rows merged + sorted) ──
-  async function expandSearch() {
-    if (expanded) return;
-    setExpandLoading(true);
-    console.log('[Results] expand triggered');
-
-    try {
-      let lat, lng;
-      if (plan.coords?.lat && plan.coords?.lng) {
-        lat = plan.coords.lat;
-        lng = plan.coords.lng;
-      } else {
-        const city = locationLabel;
-        const res  = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${GOOGLE_API_KEY}`
-        );
-        const data = await res.json();
-        lat = data.results[0].geometry.location.lat;
-        lng = data.results[0].geometry.location.lng;
-      }
-
-      const areaNameLower = locationLabel.split(',')[0].trim().toLowerCase();
-      const existingIds = new Set(places.map(p => p.id));
-      const cfg = getSubcategoryConfig(category, plan.dateIdea);
-
-      const EXPAND_RADIUS_M = 24000;
-      const expandKeyword = brunchKeyword || cfg.keyword || undefined;
-      let rawMore;
-      if (cfg.useActivityKeywordSearch) {
-        rawMore = await getActivityPlacesMerged(
-          { lat, lng },
-          {
-            radius: EXPAND_RADIUS_M,
-            maxPerKeyword: 4,
-            maxPerCategory: 3,
-            maxTotal: 20,
-            dateIdea: plan.dateIdea,
-          }
-        );
-      } else if (cfg.useMovieKeywordSearch) {
-        rawMore = await getMoviePlacesMerged(
-          { lat, lng },
-          { radius: EXPAND_RADIUS_M, maxPerKeyword: 12, maxPerChain: 3, maxTotal: 14 }
-        );
-      } else {
-        rawMore = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
-          radius: EXPAND_RADIUS_M,
-          maxResults: 50,
-          keyword: expandKeyword,
-        });
-      }
-
-      rawMore = lightFilter(rawMore);
-      rawMore = rawMore.filter((p) => !isBlockedPlace(p));
-      if (cfg.useActivityKeywordSearch) {
-        rawMore = rawMore.filter((p) => !isPassiveOutdoorActivityPlace(p));
-      }
-
-      if (cfg.excludeKeywords?.length) {
-        rawMore = rawMore.filter((p) => {
-          const n = (p.name || '').toLowerCase();
-          return !cfg.excludeKeywords.some((k) => n.includes(k));
-        });
-      }
-
-      const minRevMore = cfg.minReviews ?? 0;
-      rawMore = rawMore.filter(
-        (p) =>
-          p.rating != null &&
-          Number(p.rating) >= cfg.minRating &&
-          (minRevMore <= 0 || (p.totalRatings || 0) >= minRevMore)
-      );
-      // Keep closed places as fallback so expand can still add new options.
-
-      const shouldDiversifyActivitiesExpand =
-        category === 'activity' || ['indoor', 'outdoor'].includes(plan.dateIdea);
-      if (shouldDiversifyActivitiesExpand) {
-        rawMore = diversifyActivities(rawMore);
-      }
-
-      const curatedMore = curateResults(rawMore);
-      console.log('[Results] expand rawMore length:', rawMore.length);
-
-      const moreResults = curatedMore
-        .filter(p => !existingIds.has(p.id))
-        .map((p) => {
-          const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
-          const distMiles  = distMeters / 1609.34;
-          const inArea =
-            cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch
-              ? distMiles <= 2.1
-              : (p.address || '').toLowerCase().includes(areaNameLower);
-          return {
-            id:           p.id,
-            name:         p.name,
-            rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
-            totalRatings: p.totalRatings || 0,
-            address:      p.address || '',
-            distance:     distMiles.toFixed(1),
-            inArea,
-            isExpanded:   !inArea,
-            types:        p.types || [],
-            photoUrl:     p.photoUrl,
-            location:     p.location,
-            priceLevel:   p.priceLevel ?? null,
-            openNow:      p.isOpenNow ?? null,
-            cuisine:      getCuisine(p.types || [], p.name || ''),
-            reviewSnippet: null,
-            hoursToday:    null,
-          };
-        });
-      console.log('[Results] expand merged length:', places.length + moreResults.length);
-
-      setPlaces((prev) => {
-        const merged = [...prev, ...moreResults];
-        merged.sort((a, b) => {
-          if (a.inArea !== b.inArea) return a.inArea ? -1 : 1;
-          const ra = parseFloat(a.rating) || 0;
-          const rb = parseFloat(b.rating) || 0;
-          if (rb !== ra) return rb - ra;
-          return (b.totalRatings || 0) - (a.totalRatings || 0);
-        });
-        return merged;
-      });
-      if (moreResults.length > 0) {
-        setExpanded(true);
-        enrichTopPlaces(moreResults);
-      }
-      console.log('[Results] expand final result count:', places.length + moreResults.length);
-    } catch (e) {
-      console.log('[Results] expand error:', e.message);
-    }
-    setExpandLoading(false);
+  // ── Expand — reveals more items from fullResults, no re-fetch ──
+  function expandSearch() {
+    setExpanded(true);
   }
 
 
@@ -885,7 +774,7 @@ export default function ResultsScreen() {
       const raw = data.results || [];
 
       // Map and sort — local area first
-      const existingPlaceIds = new Set(places.map(p => p.id));
+      const existingPlaceIds = new Set(fullResults.map(p => p.id));
       const mapped = raw
         .filter(p => (p.rating ?? 0) >= 4.3)
         .map(p => {
@@ -934,7 +823,7 @@ export default function ResultsScreen() {
     setSavedIds(prev => new Set([...prev, place.id]));
 
     // Also add to top of current results list
-    setPlaces(prev => {
+    setFullResults(prev => {
       const filtered = prev.filter(p => p.id !== place.id);
       return [{ ...place, _manualAdd: true }, ...filtered];
     });
@@ -1003,21 +892,12 @@ export default function ResultsScreen() {
               <Text style={s.retryBtnText}>Try Again</Text>
             </TouchableOpacity>
           </View>
-        ) : places.length === 0 ? (
+        ) : fullResults.length === 0 ? (
           <View style={s.center}>
-            <Text style={s.errorText}>
-              {activityKeywordAreaEmpty ? 'No activities found in this area' : 'Not enough nearby.'}
-            </Text>
-            <Text style={s.errorSub}>
-              {activityKeywordAreaEmpty
-                ? 'Tap Expand to load more activities from nearby areas.'
-                : 'Tap Expand to see results from nearby areas.'}
-            </Text>
-            <TouchableOpacity style={s.retryBtn} onPress={expandSearch} activeOpacity={0.8} disabled={expandLoading}>
-              {expandLoading
-                ? <ActivityIndicator size="small" color="#F2EDE8" />
-                : <Text style={s.retryBtnText}>Expand to Nearby Areas</Text>
-              }
+            <Text style={s.errorText}>No results found nearby.</Text>
+            <Text style={s.errorSub}>Try searching for a different location or check your connection.</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={fetchPlaces} activeOpacity={0.8}>
+              <Text style={s.retryBtnText}>Try Again</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[s.retryBtn, { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.gray3 }]} onPress={() => router.back()} activeOpacity={0.8}>
               <Text style={[s.retryBtnText, { color: colors.charcoal }]}>Go Back</Text>
@@ -1029,7 +909,7 @@ export default function ResultsScreen() {
             contentContainerStyle={[s.content, { paddingBottom: Math.max(insets.bottom + 32, 40) }]}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={s.count}>{places.length} place{places.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
+            <Text style={s.count}>{fullResults.length} place{fullResults.length !== 1 ? 's' : ''} near {locationLabel.split(',')[0]}</Text>
 
             {/* ── Top Picks ── */}
             {topPicks.length > 0 && (
@@ -1039,22 +919,16 @@ export default function ResultsScreen() {
               </View>
             )}
             {topPicks.map((p, i) => (
-              <View key={p.id}>
-                {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
-                  <View style={s.expandedLabel}>
-                    <Text style={s.expandedLabelText}>📍 Nearby</Text>
-                  </View>
-                )}
-                <ResultsPlaceCard
-                  place={p}
-                  onPress={() => openDetail(p)}
-                  variant="top"
-                  rank={i + 1}
-                  isFavorite={isFavorite(p)}
-                  onToggleFavorite={toggleFavorite}
-                  showFavorite={showFavoritesOnCards}
-                />
-              </View>
+              <ResultsPlaceCard
+                key={p.id}
+                place={p}
+                onPress={() => openDetail(p)}
+                variant="top"
+                rank={i + 1}
+                isFavorite={isFavorite(p)}
+                onToggleFavorite={toggleFavorite}
+                showFavorite={showFavoritesOnCards}
+              />
             ))}
 
             {/* ── More Options ── */}
@@ -1065,49 +939,31 @@ export default function ResultsScreen() {
               </View>
             )}
             {moreOptions.map((p, i) => (
-              <View key={p.id}>
-                {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
-                  <View style={s.expandedLabel}>
-                    <Text style={s.expandedLabelText}>📍 Nearby</Text>
-                  </View>
-                )}
-                <ResultsPlaceCard
-                  place={p}
-                  onPress={() => openDetail(p)}
-                  variant="default"
-                  rank={topPicks.length + i + 1}
-                  isFavorite={isFavorite(p)}
-                  onToggleFavorite={toggleFavorite}
-                  showFavorite={showFavoritesOnCards}
-                />
-              </View>
+              <ResultsPlaceCard
+                key={p.id}
+                place={p}
+                onPress={() => openDetail(p)}
+                variant="default"
+                rank={topPicks.length + i + 1}
+                isFavorite={isFavorite(p)}
+                onToggleFavorite={toggleFavorite}
+                showFavorite={showFavoritesOnCards}
+              />
             ))}
 
-            {/* ── Expand button at bottom of local results ── */}
-            {!expanded && (
-              <View style={[s.expandBanner, { marginTop: places.length < 3 ? 16 : 24 }]}>
+            {/* ── Expand banner — only when there are more items to reveal ── */}
+            {!expanded && fullResults.length > visibleResults.length && (
+              <View style={[s.expandBanner, { marginTop: 24 }]}>
                 <Text style={s.expandBannerText}>
-                  {places.length < 3
-                    ? 'Not enough nearby. Tap Expand to see nearby areas.'
-                    : 'Want to see more options from nearby areas?'}
+                  Want to see more options?
                 </Text>
                 <TouchableOpacity
                   style={s.expandBtn}
                   onPress={expandSearch}
                   activeOpacity={0.85}
-                  disabled={expandLoading}
                 >
-                  {expandLoading
-                    ? <ActivityIndicator size="small" color="#F2EDE8" />
-                    : <Text style={s.expandBtnText}>🔍 Expand to Nearby Areas</Text>
-                  }
+                  <Text style={s.expandBtnText}>🔍 Show More Results</Text>
                 </TouchableOpacity>
-              </View>
-            )}
-
-            {expanded && (
-              <View style={[s.expandedLabel, { marginTop: 8 }]}>
-                <Text style={s.expandedLabelText}>📍 Showing nearby results</Text>
               </View>
             )}
 

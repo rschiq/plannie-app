@@ -309,7 +309,6 @@ export async function getActivityPlacesMerged(coords, options = {}) {
 
   const radius = options.radius ?? 10000;
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
-  const maxPerCategory = Math.min(Math.max(options.maxPerCategory ?? 2, 1), 5);
   const dateIdea = String(options.dateIdea || '').toLowerCase();
   const activeKeywords =
     dateIdea === 'indoor'
@@ -402,47 +401,11 @@ export async function getActivityPlacesMerged(coords, options = {}) {
     })
   );
 
-  const merged = Array.from(byId.values())
+  const mergedResults = Array.from(byId.values())
     .filter((p) => p.location)
     .filter((p) => !isPassiveOutdoorActivityPlace(p));
-  console.log('[ActivityEngine] merged total:', merged.length);
-  const byCategory = new Map();
-  merged.forEach((p) => {
-    const c = p.activityCategory || 'other';
-    if (!byCategory.has(c)) byCategory.set(c, []);
-    byCategory.get(c).push(p);
-  });
-
-  const scoreSort = (a, b) => {
-    const ar = Number(a.rating || 0);
-    const br = Number(b.rating || 0);
-    if (br !== ar) return br - ar;
-    return (b.totalRatings || 0) - (a.totalRatings || 0);
-  };
-
-  byCategory.forEach((arr) => arr.sort(scoreSort));
-
-  const categories = Array.from(byCategory.keys()).sort((a, b) => {
-    const topA = byCategory.get(a)?.[0];
-    const topB = byCategory.get(b)?.[0];
-    return scoreSort(topA || {}, topB || {});
-  });
-
-  const STRONG_DOUBLE_CATEGORIES = new Set(['bowling', 'go_kart']);
-  const balanced = [];
-  categories.forEach((c) => {
-    const arr = byCategory.get(c) || [];
-    const baseLimit = Math.max(1, maxPerCategory);
-    const perCategoryLimit = STRONG_DOUBLE_CATEGORIES.has(c)
-      ? Math.max(2, baseLimit)
-      : baseLimit;
-    balanced.push(...arr.slice(0, perCategoryLimit));
-  });
-  balanced.sort(scoreSort);
-  const cap = Math.min(options.maxTotal ?? 80, 10);
-  const final = balanced.slice(0, cap);
-  console.log('[ActivityEngine] final returned:', final.length);
-  return final;
+  console.log('[ActivityEngine] merged total:', mergedResults.length);
+  return mergedResults;
 }
 
 const MOVIE_MERGE_KEYWORDS = ['movie theater', 'drive-in theater', 'drive in movie'];
