@@ -24,11 +24,13 @@ export default function SurpriseActivity() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [details, setDetails] = useState(null);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [expandedSearch, setExpandedSearch] = useState(false);
 
-  const generateActivity = useCallback(async () => {
+  const generateActivity = useCallback(async (expanded = false) => {
     setLoading(true);
     setActivity(null);
     setNeedsLocation(false);
+    setExpandedSearch(expanded);
     const startTime = Date.now();
 
     try {
@@ -69,29 +71,12 @@ export default function SurpriseActivity() {
         return;
       }
 
-      let places = await getPlacesByCategory('activity', { lat, lng }, {
-        radius: 8000,
+      const places = await getPlacesByCategory('activity', { lat, lng }, {
+        radius: expanded ? 30000 : 8000,
         maxResults: 24,
-        selectedArea,
+        selectedArea: expanded ? '' : selectedArea,
         budget: plan.budget,
       });
-
-      if (places.length < 4) {
-        places = await getPlacesByCategory('activity', { lat, lng }, {
-          radius: 20000,
-          maxResults: 24,
-          selectedArea,
-          budget: plan.budget,
-        });
-      }
-      if (places.length < 3) {
-        places = await getPlacesByCategory('activity', { lat, lng }, {
-          radius: 35000,
-          maxResults: 24,
-          selectedArea,
-          budget: plan.budget,
-        });
-      }
 
       if (places.length > 0) {
         const pick = places[Math.floor(Math.random() * places.length)];
@@ -165,8 +150,13 @@ export default function SurpriseActivity() {
                 <Text style={styles.actionPrimaryLabel}>Go to Planning</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.actionBtnPrimary} onPress={generateActivity} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => generateActivity(false)} activeOpacity={0.85}>
                 <Text style={styles.actionPrimaryLabel}>Try Again</Text>
+              </TouchableOpacity>
+            )}
+            {!needsLocation && !expandedSearch && (
+              <TouchableOpacity style={styles.actionBtnGhost} onPress={() => generateActivity(true)} activeOpacity={0.85}>
+                <Text style={styles.actionGhostLabel}>Expand Search</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.actionBtnGhost} onPress={() => router.back()} activeOpacity={0.85}>
@@ -204,7 +194,7 @@ export default function SurpriseActivity() {
         </View>
 
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionBtnPrimary} onPress={generateActivity} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => generateActivity(false)} activeOpacity={0.85}>
             <Text style={styles.actionPrimaryLabel}>Swap</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtnGhost} onPress={openDetails} activeOpacity={0.85}>

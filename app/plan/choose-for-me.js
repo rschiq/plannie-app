@@ -8,7 +8,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getPlacesNearby } from '../../services/placesService';
+import {
+  getPlacesNearby,
+  getActivityPlacesMerged,
+  isPassiveOutdoorActivityPlace,
+} from '../../services/placesService';
 
 const SCREEN_W = Dimensions.get('window').width;
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
@@ -100,56 +104,54 @@ async function fetchLocalRestaurants(coords, areaName, fetchRadius = 10000) {
   const FAST_FOOD = ['mcdonald','burger king','wendy','jack in the box','in-n-out',"bob's big boy",'taco bell','kfc'];
   const CLEARLY_WRONG = new Set(['bar','night_club','lodging','store','shopping_mall']);
 
-  return raw
-    .filter(p => areaLower ? (p.address || '').toLowerCase().includes(areaLower) : true)
-    .filter(p => !isBlockedPlace(p))
-    .filter(p => {
-      const name  = (p.name || '').toLowerCase();
+  const sortFn = (a, b) =>
+    (Number(b.rating) - Number(a.rating)) ||
+    ((b.totalRatings || 0) - (a.totalRatings || 0));
+
+  const sortedQuality = raw
+    .filter((p) => !isBlockedPlace(p))
+    .filter((p) => {
+      const name = (p.name || '').toLowerCase();
       const types = p.types || [];
-      if (FAST_FOOD.some(k => name.includes(k))) return false;
-      if (types.some(t => CLEARLY_WRONG.has(t))) return false;
+      if (FAST_FOOD.some((k) => name.includes(k))) return false;
+      if (types.some((t) => CLEARLY_WRONG.has(t))) return false;
       return true;
     })
-    .filter(p => p.rating != null && Number(p.rating) >= 4.3)
-    .sort((a, b) =>
-      (Number(b.rating) - Number(a.rating)) ||
-      ((b.totalRatings || 0) - (a.totalRatings || 0))
-    );
+    .filter((p) => p.rating != null && Number(p.rating) >= 4.3)
+    .sort(sortFn);
+  if (!areaLower) return sortedQuality;
+
+  const addressMatch = sortedQuality.filter((p) =>
+    (p.address || '').toLowerCase().includes(areaLower)
+  );
+  return addressMatch.length > 0 ? addressMatch : sortedQuality;
 }
 
 async function fetchLocalActivities(coords, areaName, fetchRadius = 12000) {
   const { lat, lng } = coords;
-  const raw = await getPlacesNearby(
-    ['bowling_alley', 'tourist_attraction'],
+  const raw = await getActivityPlacesMerged(
     { lat, lng },
-    {
-      radius: fetchRadius,
-      maxResults: 40,
-      keyword: 'arcade OR escape room OR billiards OR bowling OR skating OR vr OR trampoline OR laser tag',
-    }
+    { radius: fetchRadius, maxPerKeyword: 8, maxTotal: 80 }
   );
   const areaLower = (areaName || '').toLowerCase();
-
-  const qualityPass = p =>
-    !isBlockedPlace(p) &&
-    !isBlockedActivity(p) &&
-    p.rating != null && Number(p.rating) >= 4.3;
 
   const sortFn = (a, b) =>
     (Number(b.rating) - Number(a.rating)) ||
     ((b.totalRatings || 0) - (a.totalRatings || 0));
 
-  const local = raw
-    .filter(p => areaLower ? (p.address || '').toLowerCase().includes(areaLower) : true)
-    .filter(qualityPass)
+  const sortedQuality = raw
+    .filter((p) => !isBlockedPlace(p))
+    .filter((p) => !isBlockedActivity(p))
+    .filter((p) => !isPassiveOutdoorActivityPlace(p))
+    .filter((p) => p.rating != null && Number(p.rating) >= 4.0)
+    .filter((p) => (p.totalRatings || 0) >= 20)
     .sort(sortFn);
+  if (!areaLower) return sortedQuality;
 
-  // Activities are sparse — if we have fewer than 4, supplement from the
-  // wider raw pool so swap options are available (first result stays local)
-  if (local.length >= 4) return local;
-  const shown = new Set(local.map(p => p.id));
-  const wider = raw.filter(p => !shown.has(p.id)).filter(qualityPass).sort(sortFn);
-  return [...local, ...wider];
+  const addressMatch = sortedQuality.filter((p) =>
+    (p.address || '').toLowerCase().includes(areaLower)
+  );
+  return addressMatch.length > 0 ? addressMatch : sortedQuality;
 }
 
 // ── Place Detail Sheet ────────────────────────────────────────
@@ -311,7 +313,20 @@ function PlaceDetailSheet({ place, onClose }) {
 }
 
 // ── Place Card ────────────────────────────────────────────────
-function PlaceCard({ label, emoji, place, onPress, onSwap, canSwap, tabsContent, loadingOverlay }) {
+function PlaceCard({
+  label,
+  emoji,
+  place,
+  onPress,
+  onSwap,
+  canSwap,
+  tabsContent,
+  loadingOverlay,
+  emptyTitle,
+  emptySubtext,
+  emptyActionLabel,
+  onEmptyAction,
+}) {
   return (
     <View style={s.section}>
       <View style={s.sectionHeader}>
@@ -357,8 +372,16 @@ function PlaceCard({ label, emoji, place, onPress, onSwap, canSwap, tabsContent,
             )}
           </>
         ) : (
-          <View style={s.cardPhotoFallback}>
-            <Text style={s.cardLoadingText}>No results for this cuisine nearby</Text>
+          <View style={s.emptyCardWrap}>
+            <Text style={s.emptyCardTitle}>{emptyTitle || label}</Text>
+            <Text style={s.cardLoadingText}>
+              {emptySubtext || 'No results for this cuisine nearby'}
+            </Text>
+            {emptyActionLabel ? (
+              <TouchableOpacity style={s.emptyActionBtn} onPress={onEmptyAction} activeOpacity={0.85}>
+                <Text style={s.emptyActionBtnText}>{emptyActionLabel}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </View>
@@ -380,6 +403,10 @@ export default function ChooseForMeScreen() {
   const [activities, setActivities]               = useState([]);
   const [restaurantIdx, setRestaurantIdx]         = useState(0);
   const [activityIdx, setActivityIdx]             = useState(0);
+  const [activityExpandLoading, setActivityExpandLoading] = useState(false);
+  const [activityExpandTried, setActivityExpandTried] = useState(false);
+  const [restaurantExpandLoading, setRestaurantExpandLoading] = useState(false);
+  const [restaurantExpandTried, setRestaurantExpandTried] = useState(false);
   const [noResults, setNoResults]                 = useState(false);
   const [saved, setSaved]                         = useState(false);
   const [detailPlace, setDetailPlace]             = useState(null);
@@ -394,6 +421,8 @@ export default function ChooseForMeScreen() {
     setNoResults(false);
     setRestaurantIdx(0);
     setActivityIdx(0);
+    setActivityExpandTried(false);
+    setRestaurantExpandTried(false);
 
     const coords   = plan.coords;
     const areaName = (plan.location || '').split(',')[0].trim();
@@ -446,8 +475,40 @@ export default function ChooseForMeScreen() {
     setActivities(acts);
     setRestaurantIdx(0);
     setActivityIdx(0);
+    setRestaurantExpandTried(false);
+    setActivityExpandTried(false);
     if (!rest.length && !acts.length) setNoResults(true);
     setExpandLoading(false);
+  }
+
+  async function expandActivitySearch() {
+    if (!plan.coords?.lat || !plan.coords?.lng) return;
+    setActivityExpandLoading(true);
+    const areaName = (plan.location || '').split(',')[0].trim();
+    const local = await fetchLocalActivities(plan.coords, areaName, 12000);
+    const wider = await fetchLocalActivities(plan.coords, '', 28000);
+    const seen = new Set(local.map((p) => p.id));
+    const extras = wider.filter((p) => !seen.has(p.id));
+    setActivities([...local, ...extras]);
+    setActivityIdx(0);
+    setActivityExpandTried(true);
+    setActivityExpandLoading(false);
+  }
+
+  async function expandRestaurantSearch() {
+    if (!plan.coords?.lat || !plan.coords?.lng) return;
+    setRestaurantExpandLoading(true);
+    const areaName = (plan.location || '').split(',')[0].trim();
+    const local = await fetchLocalRestaurants(plan.coords, areaName, 12000);
+    const wider = await fetchLocalRestaurants(plan.coords, '', 25000);
+    const seen = new Set(local.map((p) => p.id));
+    const merged = [...local, ...wider.filter((p) => !seen.has(p.id))];
+    setCuisineMap(buildCuisineMap(merged));
+    setSelectedCuisine('all');
+    expandedCuisines.current = new Set();
+    setRestaurantIdx(0);
+    setRestaurantExpandTried(true);
+    setRestaurantExpandLoading(false);
   }
 
   // Expand a specific cuisine's list when it has fewer than 3 items
@@ -495,9 +556,18 @@ export default function ChooseForMeScreen() {
   useEffect(() => {
     setRestaurantIdx(0);
     setSaved(false);
-    if (selectedCuisine !== 'all') expandCuisineIfThin(selectedCuisine);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCuisine]);
+
+  // If the selected cuisine bucket is empty after a fetch/expand, fall back to All.
+  useEffect(() => {
+    const list = cuisineMap[selectedCuisine];
+    const allLen = cuisineMap.all?.length || 0;
+    if (allLen > 0 && (!list || list.length === 0) && selectedCuisine !== 'all') {
+      setSelectedCuisine('all');
+      setRestaurantIdx(0);
+    }
+  }, [cuisineMap, selectedCuisine]);
 
   function handleSavePlan() {
     const list       = cuisineMap[selectedCuisine] || [];
@@ -582,7 +652,12 @@ export default function ChooseForMeScreen() {
   const restaurant     = currentList[restaurantIdx] || null;
   const activity       = activities[activityIdx] || null;
   const hasBoth        = !!restaurant && !!activity;
-  const availableTabs  = CUISINE_TABS.filter(t => t.key === 'all' || (cuisineMap[t.key]?.length > 0));
+  // Always offer "All" when there are restaurants; add cuisine tabs only when that bucket has rows.
+  const availableTabs = CUISINE_TABS.filter(
+    (t) =>
+      (t.key === 'all' && (cuisineMap.all?.length || 0) > 0) ||
+      (t.key !== 'all' && (cuisineMap[t.key]?.length || 0) > 0)
+  );
 
   // ── Plan view ─────────────────────────────────────────────
   return (
@@ -600,41 +675,54 @@ export default function ChooseForMeScreen() {
           <Text style={s.planTitle}>Date{'\n'}<Text style={s.planTitleAccent}>Night</Text></Text>
         </View>
 
-        {/* Dinner section — only if found */}
-        {(cuisineMap.all?.length > 0) && (
-          <PlaceCard
-            label="Dinner"
-            emoji="🍽️"
-            place={restaurant}
-            onPress={() => restaurant && setDetailPlace(restaurant)}
-            onSwap={() => setRestaurantIdx(i => (i + 1) % currentList.length)}
-            canSwap={currentList.length > 1}
-            tabsContent={
-              availableTabs.length > 1 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={s.cuisineTabs}
-                  contentContainerStyle={s.cuisineTabsContent}
-                >
-                  {availableTabs.map(t => (
-                    <TouchableOpacity
-                      key={t.key}
-                      style={[s.cuisineTab, selectedCuisine === t.key && s.cuisineTabActive]}
-                      onPress={() => setSelectedCuisine(t.key)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[s.cuisineTabText, selectedCuisine === t.key && s.cuisineTabTextActive]}>
-                        {t.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              ) : null
-            }
-            loadingOverlay={cuisineExpandLoading && selectedCuisine !== 'all'}
-          />
-        )}
+        {/* Dinner — always shown (swap + cuisine tabs when we have a pool) */}
+        <PlaceCard
+          label="Dinner"
+          emoji="🍽️"
+          place={restaurant}
+          onPress={() => restaurant && setDetailPlace(restaurant)}
+          onSwap={() =>
+            setRestaurantIdx((i) => (currentList.length ? (i + 1) % currentList.length : 0))
+          }
+          canSwap={currentList.length > 1}
+          tabsContent={
+            currentList.length > 0 && availableTabs.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={s.cuisineTabs}
+                contentContainerStyle={s.cuisineTabsContent}
+              >
+                {availableTabs.map((t) => (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[s.cuisineTab, selectedCuisine === t.key && s.cuisineTabActive]}
+                    onPress={() => {
+                      setSelectedCuisine(t.key);
+                      setRestaurantIdx(0);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[s.cuisineTabText, selectedCuisine === t.key && s.cuisineTabTextActive]}>
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : null
+          }
+          loadingOverlay={
+            restaurantExpandLoading || (cuisineExpandLoading && selectedCuisine !== 'all')
+          }
+          emptyTitle="Dinner"
+          emptySubtext={
+            restaurantExpandTried
+              ? 'Still no dinner spots in range. Try another area or pick manually.'
+              : 'No dinner spots matched your area name.\nTry expanding search for more restaurants nearby.'
+          }
+          emptyActionLabel="Expand Search"
+          onEmptyAction={expandRestaurantSearch}
+        />
 
         {/* Flow text — only when both sections are shown */}
         {hasBoth && (
@@ -645,17 +733,24 @@ export default function ChooseForMeScreen() {
           </View>
         )}
 
-        {/* Activity section — only if found */}
-        {!!activity && (
-          <PlaceCard
-            label="Activity"
-            emoji="🎯"
-            place={activity}
-            onPress={() => activity && setDetailPlace(activity)}
-            onSwap={() => setActivityIdx(i => (i + 1) % activities.length)}
-            canSwap={activities.length > 1}
-          />
-        )}
+        {/* Activity section — always render with fallback copy */}
+        <PlaceCard
+          label="Activity"
+          emoji="🎯"
+          place={activity}
+          onPress={() => activity && setDetailPlace(activity)}
+          onSwap={() => setActivityIdx(i => (i + 1) % activities.length)}
+          canSwap={activities.length > 1}
+          loadingOverlay={activityExpandLoading}
+          emptyTitle="Activity"
+          emptySubtext={
+            activityExpandTried
+              ? 'Still no activities found nearby. Try another area.'
+              : 'No activities found in this area\nTry expanding your search or choose manually'
+          }
+          emptyActionLabel="Expand Search"
+          onEmptyAction={expandActivitySearch}
+        />
 
         {/* Not feeling it? */}
         <View style={s.notFeeling}>
@@ -738,8 +833,8 @@ const s = StyleSheet.create({
   // Loading
   loadingWrap:  { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   loadingEmoji: { fontSize: 56, marginBottom: 24 },
-  loadingTitle: { fontFamily: fonts.display, fontSize: 30, color: colors.charcoal, textAlign: 'center', lineHeight: 38, marginBottom: 12 },
-  loadingSub:   { fontFamily: fonts.body, fontSize: 14, color: colors.gray2, textAlign: 'center' },
+  loadingTitle: { fontFamily: fonts.display, fontSize: 25, color: colors.charcoal, textAlign: 'center', lineHeight: 38, marginBottom: 12 },
+  loadingSub:   { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, textAlign: 'center' },
 
   // Header
   header:         { paddingTop: 20, paddingBottom: 24 },
@@ -806,13 +901,13 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.gray3,
   },
-  btnOutlineText: { fontFamily: fonts.bodyMedium, fontSize: 16, color: colors.charcoal },
+  btnOutlineText: { fontFamily: fonts.bodyMedium, fontSize: 10, color: colors.charcoal },
 
   // Error state
   centeredMsg: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, paddingTop: 80 },
-  errorEmoji:  { fontSize: 56, marginBottom: 16 },
-  errorTitle:  { fontFamily: fonts.display, fontSize: 28, color: colors.charcoal, textAlign: 'center', marginBottom: 12 },
-  errorSub:    { fontFamily: fonts.body, fontSize: 15, color: colors.gray2, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
+  errorEmoji:  { fontSize: 40, marginBottom: 16 },
+  errorTitle:  { fontFamily: fonts.display, fontSize: 20, color: colors.charcoal, textAlign: 'center', marginBottom: 12 },
+  errorSub:    { fontFamily: fonts.body, fontSize: 12, color: colors.gray2, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
 
   // Cuisine tabs
   cuisineTabs:        { marginBottom: 12 },
@@ -832,6 +927,17 @@ const s = StyleSheet.create({
   // Card loading / empty states
   cardLoadingOverlay: { height: 100, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.cream3 },
   cardLoadingText:    { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, textAlign: 'center', paddingHorizontal: 16, paddingVertical: 20 },
+  emptyCardWrap:      { minHeight: 120, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.cream3, paddingHorizontal: 18, paddingVertical: 18 },
+  emptyCardTitle:     { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.charcoal, marginBottom: 4 },
+  emptyActionBtn: {
+    marginTop: 6,
+    borderWidth: 1.5,
+    borderColor: colors.gray3,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  emptyActionBtnText: { fontFamily: fonts.bodyMedium, fontSize: 10, color: colors.charcoal },
 
   // Not feeling it
   notFeeling: {
@@ -845,7 +951,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  notFeelingText: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, textAlign: 'center', lineHeight: 20 },
+  notFeelingText: { fontFamily: fonts.body, fontSize: 10, color: colors.gray2, textAlign: 'center', lineHeight: 20 },
   manualBtn: {
     paddingHorizontal: 24,
     paddingVertical: 10,
@@ -853,5 +959,5 @@ const s = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.gray3,
   },
-  manualBtnText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.charcoal },
+  manualBtnText: { fontFamily: fonts.bodyMedium, fontSize: 10, color: colors.charcoal },
 });

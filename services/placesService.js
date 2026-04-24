@@ -6,18 +6,16 @@ const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
 const TYPE_READABLE_ORDER = [
   'restaurant',
-  'meal_takeaway',
   'food',
   'bar',
   'night_club',
   'cafe',
-  'bakery',
   'movie_theater',
+  'drive-in_theater', 
   'bowling_alley',
   'tourist_attraction',
   'amusement_park',
   'spa',
-  'gym',
 ];
 
 function titleCaseType(t) {
@@ -126,17 +124,36 @@ export async function getPlacesNearby(types, coords, options = {}) {
   const radius = options.radius ?? 8000;
   const maxResults = Math.min(Math.max(options.maxResults ?? 12, 1), 40);
 
-  // Per-type keyword map — specific types don't need keywords (they're precise enough)
-  const TYPE_KEYWORDS = {
-    restaurant:        options.keyword || 'restaurant OR brunch OR dinner OR cafe',
-    cafe:              options.keyword || 'coffee OR cafe OR dessert OR bakery',
-    bakery:            options.keyword || 'coffee OR cafe OR dessert OR bakery',
-    bar:               options.keyword || 'bar OR cocktail OR lounge OR pub',
-    movie_theater:     options.keyword || 'movie theater OR cinema',
-    tourist_attraction: options.keyword || 'topgolf OR billiards OR bowling OR arcade OR axe throwing OR go kart OR mini golf',
-    park:              options.keyword || 'hiking OR trail OR outdoor activity OR scenic',
-    // bowling_alley, amusement_park, movie_theater — type is precise, no keyword needed
-  };
+  const customKw =
+    options.keyword != null && String(options.keyword).trim() !== ''
+      ? String(options.keyword).trim()
+      : null;
+
+  /** Types where Google "type" is enough unless caller passes a single refinement keyword. */
+  const TYPE_ONLY = new Set([
+    'movie_theater',
+    'drive-in_theater',
+    'bowling_alley',
+    'amusement_park',
+    'amusement_center',
+    'spa',
+    'night_club',
+  ]);
+
+  function resolveKeywordForType(type) {
+    if (TYPE_ONLY.has(type)) return customKw || null;
+    if (customKw) return customKw;
+    switch (type) {
+      case 'restaurant':
+        return 'restaurant';
+      case 'cafe':
+        return 'coffee';
+      case 'bar':
+        return 'bar';
+      default:
+        return null;
+    }
+  }
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -155,8 +172,6 @@ export async function getPlacesNearby(types, coords, options = {}) {
 
   await Promise.all(
     searchTypes.map(async (type) => {
-      console.log('[API CALL] type used:', type);
-
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
         radius: String(radius),
@@ -164,7 +179,7 @@ export async function getPlacesNearby(types, coords, options = {}) {
       });
 
       if (type) params.set('type', type);
-      const keyword = TYPE_KEYWORDS[type]; // only apply keyword if defined for this type
+      const keyword = resolveKeywordForType(type);
       if (keyword) params.set('keyword', keyword);
 
       const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
@@ -217,9 +232,126 @@ export async function getPlacesNearby(types, coords, options = {}) {
   });
 
   results = Array.from(uniqueMap.values());
-  console.log('[Dedup] total after dedupe:', results.length);
 
   return results.filter((p) => p.location).slice(0, maxResults);
+}
+
+/** Parks, trails, passive nature — exclude from activity keyword results. */
+export function isPassiveOutdoorActivityPlace(place) {
+  const n = (place.name || '').toLowerCase();
+  const types = place.types || [];
+  const BAD = [
+    'dog park', 'dog run', 'off-leash', 'off leash', 'bark park',
+    'trail', 'trailhead', 'hiking', 'hike ', 'walkway',
+    'national park', 'state park', 'provincial park', 'county park',
+    'nature preserve', 'nature reserve', 'natural area', 'open space',
+    'scenic overlook', 'scenic viewpoint', 'lookout point',
+    'campground', 'rv park', 'picnic grove',
+    'botanical garden', 'arboretum', 'national forest',
+    'wildlife refuge', 'wetland', 'conservation area',
+  ];
+  if (BAD.some((k) => n.includes(k))) return true;
+  if (types.includes('park')) return true;
+  if (types.includes('campground')) return true;
+  if (types.includes('rv_park')) return true;
+  if (types.includes('natural_feature')) return true;
+  return false;
+}
+
+/** Single-keyword nearby searches merged (no OR strings). No park / tourist_attraction type. */
+const ACTIVITY_MERGE_KEYWORDS = [
+  'roller skating rink',
+  'ice skating rink',
+  'bowling alley',
+  'arcade',
+  'billiards',
+  'go kart',
+  'mini golf',
+  'golf driving range',
+  'Topgolf',
+  'escape room',
+  'VR experience',
+  'axe throwing',
+  'batting cage',
+];
+
+export async function getActivityPlacesMerged(coords, options = {}) {
+  const lat = coords?.lat;
+  const lng = coords?.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return [];
+
+  const radius = options.radius ?? 10000;
+  const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
+
+  const toMiles = (from, to) => {
+    if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
+    const R = 3958.8;
+    const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+    const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((from.lat * Math.PI) / 180) *
+        Math.cos((to.lat * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const byId = new Map();
+
+  await Promise.all(
+    ACTIVITY_MERGE_KEYWORDS.map(async (keyword) => {
+      const params = new URLSearchParams({
+        location: `${lat},${lng}`,
+        radius: String(radius),
+        keyword,
+        key: GOOGLE_API_KEY,
+      });
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const results = (data.results || []).slice(0, maxPerKeyword);
+
+        results.forEach((p) => {
+          if (!p?.place_id || byId.has(p.place_id)) return;
+
+          const location =
+            p.geometry?.location &&
+            typeof p.geometry.location.lat === 'number' &&
+            typeof p.geometry.location.lng === 'number'
+              ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng }
+              : null;
+
+          const distanceMiles = toMiles({ lat, lng }, location);
+
+          byId.set(p.place_id, {
+            id: p.place_id,
+            name: p.name,
+            rating: p.rating != null ? parseFloat(String(p.rating), 10) : null,
+            totalRatings: p.user_ratings_total || 0,
+            address: p.vicinity || p.formatted_address || '',
+            shortLocation: shortenVicinity(p.vicinity || p.formatted_address || ''),
+            types: p.types || [],
+            photoUrl: p.photos?.[0]?.photo_reference
+              ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+              : null,
+            location,
+            distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : null,
+            isOpenNow: p.opening_hours?.open_now ?? null,
+            priceLevel: p.price_level ?? null,
+          });
+        });
+      } catch {}
+    })
+  );
+
+  const merged = Array.from(byId.values())
+    .filter((p) => p.location)
+    .filter((p) => !isPassiveOutdoorActivityPlace(p));
+  merged.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+  const cap = options.maxTotal ?? 80;
+  return merged.slice(0, cap);
 }
 
 export async function fetchPlaceDetails(placeId) {

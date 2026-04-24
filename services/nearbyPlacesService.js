@@ -79,11 +79,10 @@ const BLOCKED = [
   'gamestop','game stop','best buy','walmart','target','costco',
   'home depot','dollar tree','dollar general','marshalls','ross ',
   'walgreens','cvs','rite aid','dollar store','five below',
-  'dave and buster','dave & buster','round 1','round one',
-  'main event','palace entertainment','chuck e cheese',
-  'arcade','barcade',
+  'round one',
+  'palace entertainment','chuck e cheese',
   'kids','kiddie','kidz','children','toddler','indoor playground',
-  'soft play','bounce','trampoline','sky zone','urban air',
+  'soft play','bounce','trampoline','urban air',
   'gym','fitness','crossfit','ymca','planet fitness','orangetheory',
   'hospital','clinic','medical','dental','pharmacy',
   'school','church','storage','auto repair',
@@ -120,7 +119,7 @@ export function isInArea(place, areaName) {
   return false;
 }
 
-function passesQuality(place, minRating = 3.8, minReviews = 10, category = '') {
+function passesQuality(place, minRating = 4.2, minReviews = 30, category = '') {
   if ((place.rating ?? 0) < minRating)             return false;
   if ((place.user_ratings_total ?? 0) < minReviews) return false;
   const hybrid = category === 'activity' && activityVenueSignals(place);

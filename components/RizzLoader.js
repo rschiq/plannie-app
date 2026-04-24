@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   },
   topLine: {
     fontFamily: fonts.bodySemiBold,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.charcoal,
     textAlign: 'center',
     marginBottom: 20,
@@ -75,14 +75,14 @@ const styles = StyleSheet.create({
   },
   subLabel: {
     fontFamily: fonts.bodyMedium,
-    fontSize: 14,
+    fontSize: 12,
     color: colors.gray2,
     textAlign: 'center',
     marginBottom: 10,
   },
   rizz: {
     fontFamily: fonts.body,
-    fontSize: 19,
+    fontSize: 16,
     lineHeight: 28,
     color: colors.charcoal,
     textAlign: 'center',

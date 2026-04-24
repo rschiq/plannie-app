@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius } from '../../constants/theme';
-import { RESTAURANTS } from '../../data';
 import { getPlacesNearby, getPlacesByCategory, getReadableType, shortenVicinity, getCurationLabel, fetchPlaceDetails } from '../../services/placesService';
 import { ScreenHeader, ProgressBar, PrimaryButton, OutlineButton } from '../../components/UI';
 import { ItemCard } from '../../components/ItemCard';
@@ -40,11 +39,13 @@ export default function FoodScreen() {
   const [selected, setSelected] = useState(plan.food);
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [expandLoading, setExpandLoading] = useState(false);
 
   useEffect(() => { loadRestaurants(); }, []);
 
-  async function loadRestaurants() {
-    setLoading(true);
+  async function loadRestaurants(expanded = false) {
+    if (expanded) setExpandLoading(true);
+    else setLoading(true);
     const startTime = Date.now();
     try {
       // ✅ Use stored coords if available, geocode city as fallback
@@ -62,15 +63,17 @@ export default function FoodScreen() {
           baseLat = geoData.results[0].geometry.location.lat;
           baseLng = geoData.results[0].geometry.location.lng;
         } else {
-          setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+          setItems([]);
           await minLoadingDisplaySince(startTime);
-          setLoading(false);
+          if (expanded) setExpandLoading(false);
+          else setLoading(false);
           return;
         }
       } else {
-        setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+        setItems([]);
         await minLoadingDisplaySince(startTime);
-        setLoading(false);
+        if (expanded) setExpandLoading(false);
+        else setLoading(false);
         return;
       }
       const selectedArea = (plan.city || '').split(',')[0].trim();
@@ -83,31 +86,28 @@ export default function FoodScreen() {
         places = await getPlacesNearby(
           ['restaurant'],
           activityLocation,
-          { radius: 1500, maxResults: 12, selectedArea, category: 'food', budget: plan.budget }
+          {
+            radius: expanded ? 12000 : 1500,
+            maxResults: 12,
+            selectedArea: expanded ? '' : selectedArea,
+            category: 'food',
+            budget: plan.budget,
+          }
         );
-        if (places.length < 4) {
-          places = await getPlacesNearby(
-            ['restaurant'],
-            activityLocation,
-            { radius: 3000, maxResults: 12, selectedArea, category: 'food', budget: plan.budget }
-          );
-        }
       }
 
-      // Fallback to plan coords if no activity or still sparse
-      if (places.length < 3) {
+      // Fallback to plan coords if no activity source
+      if (places.length === 0) {
         places = await getPlacesByCategory(
           'food',
           { lat: baseLat, lng: baseLng },
-          { radius: 2000, maxResults: 12, selectedArea, budget: plan.budget }
+          {
+            radius: expanded ? 12000 : 2000,
+            maxResults: 12,
+            selectedArea: expanded ? '' : selectedArea,
+            budget: plan.budget,
+          }
         );
-        if (places.length < 4) {
-          places = await getPlacesByCategory(
-            'food',
-            { lat: baseLat, lng: baseLng },
-            { radius: 8000, maxResults: 12, selectedArea, budget: plan.budget }
-          );
-        }
       }
 
       // PART 7: avoid showing same type as activity
@@ -158,16 +158,18 @@ export default function FoodScreen() {
 
         setItems(mapped);
         await minLoadingDisplaySince(startTime);
-        setLoading(false);
+        if (expanded) setExpandLoading(false);
+        else setLoading(false);
         return;
       }
     } catch (e) {
       console.log('Places API failed, using local data:', e.message);
     }
 
-    setItems(RESTAURANTS[plan.vibe] || RESTAURANTS.Romantic);
+    setItems([]);
     await minLoadingDisplaySince(startTime);
-    setLoading(false);
+    if (expanded) setExpandLoading(false);
+    else setLoading(false);
   }
 
   function handleAdd()  { updatePlan({ food: selected }); router.push('/plan/addons'); }
@@ -192,15 +194,27 @@ export default function FoodScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
-          {items.map(item => (
-            <ItemCard
-              key={item.id}
-              item={item}
-              selected={selected?.id === item.id}
-              onSelect={setSelected}
-              type="food"
-            />
-          ))}
+          {items.length > 0 ? (
+            items.map(item => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                selected={selected?.id === item.id}
+                onSelect={setSelected}
+                type="food"
+              />
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No local food results found</Text>
+              <Text style={styles.emptySub}>Try expanding search for nearby areas.</Text>
+              <OutlineButton
+                label={expandLoading ? 'Expanding…' : 'Expand Search'}
+                onPress={() => loadRestaurants(true)}
+                disabled={expandLoading}
+              />
+            </View>
+          )}
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
@@ -218,5 +232,13 @@ const styles = StyleSheet.create({
   loaderBody:  { flex: 1, minHeight: 0, alignSelf: 'stretch' },
   scroll:      { flex: 1 },
   content:     { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
+  emptyCard: {
+    backgroundColor: colors.cream2,
+    borderRadius: radius.md,
+    padding: 18,
+    gap: 8,
+  },
+  emptyTitle: { fontFamily: fonts.bodySemiBold, fontSize: 15, color: colors.charcoal },
+  emptySub: { fontFamily: fonts.body, fontSize: 13, color: colors.gray2, marginBottom: 6 },
   bbar: { paddingHorizontal: 24, paddingBottom: 16, paddingTop: 12, backgroundColor: colors.cream },
 });

@@ -10,7 +10,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
-import { getPlacesNearby } from '../../services/placesService';
+import {
+  getPlacesNearby,
+  getActivityPlacesMerged,
+  isPassiveOutdoorActivityPlace,
+} from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
@@ -28,54 +32,58 @@ const SUBCATEGORY_CONFIG = {
     keyword: 'restaurant',
     excludeKeywords: ['cafe', 'coffee', 'tea'],
     displayTitle: 'Restaurants',
-    minRating: 4.0,
+    minRating: 4.3,
   },
   coffee_dessert: {
-    fetchTypes: ['cafe', 'bakery'],
-    keyword: 'coffee OR cafe OR espresso',
+    fetchTypes: ['cafe'],
+    keyword: 'coffee',
     excludeKeywords: [],
     displayTitle: 'Cafes',
-    minRating: 4.0,
+    minRating: 4.3,
   },
   drinks: {
     fetchTypes: ['bar'],
-    keyword: 'bar OR cocktail OR lounge',
+    keyword: 'bar',
     excludeKeywords: [],
     displayTitle: 'Bars',
-    minRating: 4.0,
+    minRating: 4.3,
   },
   indoor: {
-    fetchTypes: ['bowling_alley', 'tourist_attraction'],
-    keyword: 'arcade OR escape room OR billiards OR skating OR vr OR trampoline OR laser tag',
+    useActivityKeywordSearch: true,
+    fetchTypes: [],
+    keyword: null,
     excludeKeywords: [],
     displayTitle: 'Indoor Activities',
     minRating: 4.0,
+    minReviews: 20,
   },
   outdoor: {
-    fetchTypes: ['tourist_attraction'],
-    keyword: 'go kart OR paintball OR mini golf OR golf OR hiking OR trail',
+    useActivityKeywordSearch: true,
+    fetchTypes: [],
+    keyword: null,
     excludeKeywords: [],
     displayTitle: 'Outdoor Activities',
     minRating: 4.0,
+    minReviews: 20,
   },
   movies: {
-    fetchTypes: ['movie_theater'],
+    fetchTypes: ['movie_theater', 'drive-in_theater'],
     keyword: null,
     excludeKeywords: [],
     displayTitle: 'Movies',
-    minRating: 4.0,
+    minRating: 4.2,
     fetchRadius: 10000,
   },
 };
 
 // ── Cuisine tabs (brunch_dinner only) ─────────────────────────
 const CUISINE_TABS = [
-  { key: 'japanese',  label: 'Japanese',  keyword: 'japanese restaurant OR sushi' },
-  { key: 'korean',    label: 'Korean',    keyword: 'korean restaurant OR kbbq' },
+  { key: 'japanese',  label: 'Japanese',  keyword: 'japanese' },
+  { key: 'korean',    label: 'Korean',    keyword: 'korean bbq' },
   { key: 'chinese',   label: 'Chinese',   keyword: 'chinese restaurant' },
-  { key: 'italian',   label: 'Italian',   keyword: 'italian restaurant OR pizza' },
-  { key: 'mexican',   label: 'Mexican',   keyword: 'mexican restaurant OR tacos' },
-  { key: 'american',  label: 'American',  keyword: 'american grill OR steakhouse OR burger' },
+  { key: 'italian',   label: 'Italian',   keyword: 'italian restaurant' },
+  { key: 'mexican',   label: 'Mexican',   keyword: 'mexican restaurant' },
+  { key: 'american',  label: 'American',  keyword: 'steakhouse' },
 ];
 
 function getSubcategoryConfig(category, dateIdea) {
@@ -87,19 +95,20 @@ function getSubcategoryConfig(category, dateIdea) {
 
 // ── Activity diversity (max 2 per type group) ─────────────────
 const ACTIVITY_GROUPS = [
-  ['arcade', 'fun center'],
+  ['arcade'],
   ['escape'],
-  ['billiard', 'pool hall'],
-  ['skate', 'skating'],
+  ['billiard', 'pool hall', 'billiards'],
+  ['skate', 'skating', 'roller'],
+  ['ice skat', 'ice rink'],
   ['vr', 'virtual reality'],
   ['trampoline', 'sky zone', 'urban air', 'bounce'],
   ['laser'],
   ['bowling', 'bowl'],
   ['kart', 'go kart', 'karting'],
   ['paintball'],
-  ['mini golf', 'putt'],
-  ['topgolf', 'golf'],
-  ['hiking', 'trail'],
+  ['mini golf', 'putt', 'putt-putt'],
+  ['driving range', 'topgolf'],
+  ['axe throw', 'batting cage', 'batting'],
 ];
 
 function getActivityGroup(place) {
@@ -108,15 +117,16 @@ function getActivityGroup(place) {
     if (ACTIVITY_GROUPS[i].some(m => n.includes(m))) return i;
   }
   const types = place.types || [];
-  if (types.includes('bowling_alley'))  return 100;
-  if (types.includes('movie_theater'))  return 101;
+  if (types.includes('bowling_alley')) return 100;
+  if (types.includes('movie_theater')) return 101;
   if (types.includes('amusement_park')) return 102;
+  if (types.includes('amusement_center')) return 103;
   return 200 + (place.id || '').charCodeAt(0);
 }
 
-function diversifyActivities(places, limit = 2) {
+function diversifyActivities(places, limit = 3) {
   const counts = {};
-  return places.filter(p => {
+  return places.filter((p) => {
     const g = String(getActivityGroup(p));
     counts[g] = (counts[g] || 0) + 1;
     return counts[g] <= limit;
@@ -169,7 +179,7 @@ const BLOCK_LIST = [
   'school','church','storage','auto repair','car wash',
   'trampoline','sky zone','urban air','bounce','chuck e cheese',
   'hard rock cafe','cheesecake factory','buffalo wild wings',
-  "applebee's","chili's",'ihop',"denny's",
+  'ihop',"denny's",
   "bob's big boy",'cracker barrel','red lobster','hooters',
   'mcdonald','burger king','wendy','jack in the box','kfc','taco bell',
 ];
@@ -202,7 +212,6 @@ function getCuisine(types = [], name = '') {
   if (types.includes('restaurant'))  return 'Restaurant';
   if (types.includes('cafe'))        return 'Cafe';
   if (types.includes('bar'))         return 'Bar';
-  if (types.includes('bakery'))      return 'Bakery';
   return null;
 }
 
@@ -484,17 +493,23 @@ export default function ResultsScreen() {
   const locationLabel = plan.location || '';
   const topPicks = places.slice(0, 5);
   const moreOptions = places.slice(5);
+  const brunchKeyword =
+    plan.dateIdea === 'brunch_dinner' && selectedCuisine
+      ? CUISINE_TABS.find((t) => t.key === selectedCuisine)?.keyword
+      : null;
   const showFavoritesOnCards =
     category === 'food' ||
     category === 'activity' ||
     ['brunch_dinner', 'coffee_dessert', 'drinks', 'indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
 
+  const activityKeywordAreaEmpty =
+    !loading &&
+    !error &&
+    places.length === 0 &&
+    !!subcategoryConfig.useActivityKeywordSearch &&
+    !expanded;
+
   useEffect(() => { fetchPlaces(); }, []);
-  useEffect(() => {
-    if (topPicks.length > 0) {
-      console.log('[Ranking] Top Picks:', topPicks.map((p) => p.name));
-    }
-  }, [places]);
 
   // ── Cuisine select — refetch with new keyword ────────────────
   function handleCuisineSelect(key) {
@@ -539,40 +554,58 @@ export default function ResultsScreen() {
       const areaName = locationLabel.split(',')[0].trim();
       const areaNameLower = areaName.toLowerCase();
       const cfg = getSubcategoryConfig(category, plan.dateIdea);
-      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 8000 : 3500);
+      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 10000 : 3500);
 
-      console.log('[Results] dateIdea:', plan.dateIdea, 'types:', cfg.fetchTypes, 'keyword:', cfg.keyword);
-
-      let raw = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
-        radius: fetchRadius,
-        maxResults: 30,
-        keyword: cuisineKeyword || cfg.keyword || undefined,
-      });
-
-      raw = lightFilter(raw);
-      raw = raw.filter(p => !isBlockedPlace(p));
-
-      if (cfg.excludeKeywords?.length) {
-        raw = raw.filter(p => {
-          const n = (p.name || '').toLowerCase();
-          return !cfg.excludeKeywords.some(k => n.includes(k));
+      let raw;
+      if (cfg.useActivityKeywordSearch) {
+        raw = await getActivityPlacesMerged(
+          { lat, lng },
+          { radius: fetchRadius, maxPerKeyword: 10, maxTotal: 100 }
+        );
+      } else {
+        raw = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
+          radius: fetchRadius,
+          maxResults: 30,
+          keyword: cuisineKeyword || cfg.keyword || undefined,
         });
       }
 
-      raw = raw.filter(p => p.rating != null && Number(p.rating) >= cfg.minRating);
-
-      // Local-first: movies skip address filter (theaters are sparse)
-      let mainPool;
-      if (plan.dateIdea === 'movies') {
-        mainPool = raw;
-      } else {
-        const byAddress = raw.filter(p => (p.address || '').toLowerCase().includes(areaNameLower));
-        const byRadiusLocal = raw.filter(p => getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng) <= 5000);
-        mainPool = byAddress.length >= 3 ? byAddress : byRadiusLocal;
-        console.log('[LocalFirst] byAddress:', byAddress.length, 'byRadius5km:', byRadiusLocal.length, 'using:', mainPool.length);
+      raw = lightFilter(raw);
+      raw = raw.filter((p) => !isBlockedPlace(p));
+      if (cfg.useActivityKeywordSearch) {
+        raw = raw.filter((p) => !isPassiveOutdoorActivityPlace(p));
       }
 
-      if (category === 'activity') {
+      if (cfg.excludeKeywords?.length) {
+        raw = raw.filter((p) => {
+          const n = (p.name || '').toLowerCase();
+          return !cfg.excludeKeywords.some((k) => n.includes(k));
+        });
+      }
+
+      const minRev = cfg.minReviews ?? 0;
+      raw = raw.filter(
+        (p) =>
+          p.rating != null &&
+          Number(p.rating) >= cfg.minRating &&
+          (minRev <= 0 || (p.totalRatings || 0) >= minRev)
+      );
+
+      const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
+      const isActivityLike =
+        category === 'activity' ||
+        ['indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
+
+      let mainPool;
+      if (cfg.useActivityKeywordSearch) {
+        mainPool = byAddress;
+      } else if (isActivityLike && byAddress.length === 0 && raw.length > 0) {
+        mainPool = raw;
+      } else {
+        mainPool = byAddress;
+      }
+
+      if (isActivityLike) {
         mainPool = diversifyActivities(mainPool);
       }
 
@@ -581,6 +614,7 @@ export default function ResultsScreen() {
       const mapped = curated.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
         const distMiles  = distMeters / 1609.34;
+        const inArea = (p.address || '').toLowerCase().includes(areaNameLower);
         return {
           id:           p.id,
           name:         p.name,
@@ -588,7 +622,7 @@ export default function ResultsScreen() {
           totalRatings: p.totalRatings || 0,
           address:      p.address || '',
           distance:     distMiles.toFixed(1),
-          inArea:       true,
+          inArea,
           isExpanded:   false,
           types:        p.types || [],
           photoUrl:     p.photoUrl,
@@ -657,9 +691,11 @@ export default function ResultsScreen() {
     }
   }
 
-  // ── Expand to nearby areas (radius = 15km) ──────────────────
+  // ── Expand to nearby areas (wider radius; new rows merged + sorted) ──
   async function expandSearch() {
+    if (expanded) return;
     setExpandLoading(true);
+
     try {
       let lat, lng;
       if (plan.coords?.lat && plan.coords?.lng) {
@@ -675,28 +711,51 @@ export default function ResultsScreen() {
         lng = data.results[0].geometry.location.lng;
       }
 
+      const areaNameLower = locationLabel.split(',')[0].trim().toLowerCase();
       const existingIds = new Set(places.map(p => p.id));
       const cfg = getSubcategoryConfig(category, plan.dateIdea);
 
-      let rawMore = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
-        radius: 15000,
-        maxResults: 40,
-        keyword: cfg.keyword || undefined,
-      });
-
-      rawMore = lightFilter(rawMore);
-      rawMore = rawMore.filter(p => !isBlockedPlace(p));
-
-      if (cfg.excludeKeywords?.length) {
-        rawMore = rawMore.filter(p => {
-          const n = (p.name || '').toLowerCase();
-          return !cfg.excludeKeywords.some(k => n.includes(k));
+      const EXPAND_RADIUS_M = 24000;
+      const expandKeyword = brunchKeyword || cfg.keyword || undefined;
+      let rawMore;
+      if (cfg.useActivityKeywordSearch) {
+        rawMore = await getActivityPlacesMerged(
+          { lat, lng },
+          { radius: EXPAND_RADIUS_M, maxPerKeyword: 12, maxTotal: 120 }
+        );
+      } else {
+        rawMore = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
+          radius: EXPAND_RADIUS_M,
+          maxResults: 50,
+          keyword: expandKeyword,
         });
       }
 
-      rawMore = rawMore.filter(p => p.rating != null && Number(p.rating) >= cfg.minRating);
+      rawMore = lightFilter(rawMore);
+      rawMore = rawMore.filter((p) => !isBlockedPlace(p));
+      if (cfg.useActivityKeywordSearch) {
+        rawMore = rawMore.filter((p) => !isPassiveOutdoorActivityPlace(p));
+      }
 
-      if (category === 'activity') {
+      if (cfg.excludeKeywords?.length) {
+        rawMore = rawMore.filter((p) => {
+          const n = (p.name || '').toLowerCase();
+          return !cfg.excludeKeywords.some((k) => n.includes(k));
+        });
+      }
+
+      const minRevMore = cfg.minReviews ?? 0;
+      rawMore = rawMore.filter(
+        (p) =>
+          p.rating != null &&
+          Number(p.rating) >= cfg.minRating &&
+          (minRevMore <= 0 || (p.totalRatings || 0) >= minRevMore)
+      );
+
+      const isActivityLikeExpand =
+        category === 'activity' ||
+        ['indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
+      if (isActivityLikeExpand) {
         rawMore = diversifyActivities(rawMore);
       }
 
@@ -707,6 +766,7 @@ export default function ResultsScreen() {
         .map((p) => {
           const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
           const distMiles  = distMeters / 1609.34;
+          const inArea = (p.address || '').toLowerCase().includes(areaNameLower);
           return {
             id:           p.id,
             name:         p.name,
@@ -714,8 +774,8 @@ export default function ResultsScreen() {
             totalRatings: p.totalRatings || 0,
             address:      p.address || '',
             distance:     distMiles.toFixed(1),
-            inArea:       false,
-            isExpanded:   true,
+            inArea,
+            isExpanded:   !inArea,
             types:        p.types || [],
             photoUrl:     p.photoUrl,
             location:     p.location,
@@ -727,8 +787,21 @@ export default function ResultsScreen() {
           };
         });
 
-      setPlaces(prev => [...prev, ...moreResults]);
-      setExpanded(true);
+      setPlaces((prev) => {
+        const merged = [...prev, ...moreResults];
+        merged.sort((a, b) => {
+          if (a.inArea !== b.inArea) return a.inArea ? -1 : 1;
+          const ra = parseFloat(a.rating) || 0;
+          const rb = parseFloat(b.rating) || 0;
+          if (rb !== ra) return rb - ra;
+          return (b.totalRatings || 0) - (a.totalRatings || 0);
+        });
+        return merged;
+      });
+      if (moreResults.length > 0) {
+        setExpanded(true);
+        enrichTopPlaces(moreResults);
+      }
     } catch (e) {
       console.log('[Results] expand error:', e.message);
     }
@@ -757,39 +830,22 @@ export default function ResultsScreen() {
       }
 
       const areaName = locationLabel.split(',')[0].trim();
+      const areaNameLower = areaName.toLowerCase();
 
-      // Search 1: tight local radius (5km) with user query
-      const params1 = new URLSearchParams({
+      const params = new URLSearchParams({
         location: `${lat},${lng}`,
-        radius: '5000',
+        radius: '12000',
         keyword: searchQuery.trim(),
         key: GOOGLE_API_KEY,
       });
-      const res1  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params1}`);
-      const data1 = await res1.json();
-      let raw = data1.results || [];
-
-      // Search 2: if not enough, expand to 15km
-      if (raw.length < 5) {
-        const params2 = new URLSearchParams({
-          location: `${lat},${lng}`,
-          radius: '15000',
-          keyword: searchQuery.trim(),
-          key: GOOGLE_API_KEY,
-        });
-        const res2  = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params2}`);
-        const data2 = await res2.json();
-        const extra = data2.results || [];
-        const existingIds = new Set(raw.map(p => p.place_id));
-        for (const p of extra) {
-          if (!existingIds.has(p.place_id)) raw.push(p);
-        }
-      }
+      const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
+      const data = await res.json();
+      const raw = data.results || [];
 
       // Map and sort — local area first
       const existingPlaceIds = new Set(places.map(p => p.id));
       const mapped = raw
-        .filter(p => (p.rating ?? 0) >= 3.5)
+        .filter(p => (p.rating ?? 0) >= 4.3)
         .map(p => {
           const distMeters = getDistanceMeters(lat, lng, p.geometry?.location?.lat ?? 0, p.geometry?.location?.lng ?? 0);
           const dist = distMeters / 1609.34;
@@ -800,6 +856,7 @@ export default function ResultsScreen() {
             totalRatings: p.user_ratings_total || 0,
             address:      p.vicinity || '',
             distance:     dist.toFixed(1),
+            inArea:       (p.vicinity || '').toLowerCase().includes(areaNameLower),
             alreadyInList: existingPlaceIds.has(p.place_id),
             types:        p.types || [],
             photoUrl:     p.photos?.[0]?.photo_reference
@@ -906,8 +963,14 @@ export default function ResultsScreen() {
           </View>
         ) : places.length === 0 ? (
           <View style={s.center}>
-            <Text style={s.errorText}>Not enough nearby.</Text>
-            <Text style={s.errorSub}>Tap Expand to see results from nearby areas.</Text>
+            <Text style={s.errorText}>
+              {activityKeywordAreaEmpty ? 'No activities found in this area' : 'Not enough nearby.'}
+            </Text>
+            <Text style={s.errorSub}>
+              {activityKeywordAreaEmpty
+                ? 'Tap Expand to load more activities from nearby areas.'
+                : 'Tap Expand to see results from nearby areas.'}
+            </Text>
             <TouchableOpacity style={s.retryBtn} onPress={expandSearch} activeOpacity={0.8} disabled={expandLoading}>
               {expandLoading
                 ? <ActivityIndicator size="small" color="#F2EDE8" />
@@ -937,7 +1000,7 @@ export default function ResultsScreen() {
               <View key={p.id}>
                 {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
                   <View style={s.expandedLabel}>
-                    <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
+                    <Text style={s.expandedLabelText}>📍 Nearby</Text>
                   </View>
                 )}
                 <ResultsPlaceCard
@@ -963,7 +1026,7 @@ export default function ResultsScreen() {
               <View key={p.id}>
                 {p.isExpanded && places.indexOf(p) === places.findIndex(x => x.isExpanded) && (
                   <View style={s.expandedLabel}>
-                    <Text style={s.expandedLabelText}>📍 Nearby areas</Text>
+                    <Text style={s.expandedLabelText}>📍 Nearby</Text>
                   </View>
                 )}
                 <ResultsPlaceCard
@@ -1002,7 +1065,7 @@ export default function ResultsScreen() {
 
             {expanded && (
               <View style={[s.expandedLabel, { marginTop: 8 }]}>
-                <Text style={s.expandedLabelText}>📍 Showing results from nearby areas</Text>
+                <Text style={s.expandedLabelText}>📍 Showing nearby results</Text>
               </View>
             )}
 
