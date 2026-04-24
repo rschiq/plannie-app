@@ -13,6 +13,7 @@ import { colors, fonts, radius, shadow } from '../../constants/theme';
 import {
   getPlacesNearby,
   getActivityPlacesMerged,
+  getMoviePlacesMerged,
   isPassiveOutdoorActivityPlace,
 } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
@@ -56,6 +57,7 @@ const SUBCATEGORY_CONFIG = {
     displayTitle: 'Indoor Activities',
     minRating: 4.0,
     minReviews: 20,
+    fetchRadius: 3500,
   },
   outdoor: {
     useActivityKeywordSearch: true,
@@ -65,14 +67,17 @@ const SUBCATEGORY_CONFIG = {
     displayTitle: 'Outdoor Activities',
     minRating: 4.0,
     minReviews: 20,
+    fetchRadius: 3500,
   },
   movies: {
-    fetchTypes: ['movie_theater', 'drive-in_theater'],
+    useMovieKeywordSearch: true,
+    fetchTypes: [],
     keyword: null,
     excludeKeywords: [],
     displayTitle: 'Movies',
     minRating: 4.2,
-    fetchRadius: 10000,
+    minReviews: 30,
+    fetchRadius: 3000,
   },
 };
 
@@ -554,13 +559,18 @@ export default function ResultsScreen() {
       const areaName = locationLabel.split(',')[0].trim();
       const areaNameLower = areaName.toLowerCase();
       const cfg = getSubcategoryConfig(category, plan.dateIdea);
-      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 10000 : 3500);
+      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 3000 : 3500);
 
       let raw;
       if (cfg.useActivityKeywordSearch) {
         raw = await getActivityPlacesMerged(
           { lat, lng },
-          { radius: fetchRadius, maxPerKeyword: 10, maxTotal: 100 }
+          { radius: fetchRadius, maxPerKeyword: 10, maxPerCategory: 2, maxTotal: 100 }
+        );
+      } else if (cfg.useMovieKeywordSearch) {
+        raw = await getMoviePlacesMerged(
+          { lat, lng },
+          { radius: fetchRadius, maxPerKeyword: 10, maxPerChain: 3, maxTotal: 10 }
         );
       } else {
         raw = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
@@ -572,6 +582,7 @@ export default function ResultsScreen() {
 
       raw = lightFilter(raw);
       raw = raw.filter((p) => !isBlockedPlace(p));
+      const usesControlledKeywordSearch = cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch;
       if (cfg.useActivityKeywordSearch) {
         raw = raw.filter((p) => !isPassiveOutdoorActivityPlace(p));
       }
@@ -590,22 +601,28 @@ export default function ResultsScreen() {
           Number(p.rating) >= cfg.minRating &&
           (minRev <= 0 || (p.totalRatings || 0) >= minRev)
       );
+      if (usesControlledKeywordSearch) {
+        raw = raw.filter((p) => p.isOpenNow !== false);
+      }
 
       const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
       const isActivityLike =
         category === 'activity' ||
         ['indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
+      const shouldDiversifyActivities =
+        category === 'activity' || ['indoor', 'outdoor'].includes(plan.dateIdea);
 
       let mainPool;
-      if (cfg.useActivityKeywordSearch) {
-        mainPool = byAddress;
+      if (cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch) {
+        // Activity local-first is radius-based, not address-substring based.
+        mainPool = raw;
       } else if (isActivityLike && byAddress.length === 0 && raw.length > 0) {
         mainPool = raw;
       } else {
         mainPool = byAddress;
       }
 
-      if (isActivityLike) {
+      if (shouldDiversifyActivities) {
         mainPool = diversifyActivities(mainPool);
       }
 
@@ -614,7 +631,10 @@ export default function ResultsScreen() {
       const mapped = curated.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
         const distMiles  = distMeters / 1609.34;
-        const inArea = (p.address || '').toLowerCase().includes(areaNameLower);
+        const inArea =
+          cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch
+            ? distMiles <= 2.1
+            : (p.address || '').toLowerCase().includes(areaNameLower);
         return {
           id:           p.id,
           name:         p.name,
@@ -695,6 +715,7 @@ export default function ResultsScreen() {
   async function expandSearch() {
     if (expanded) return;
     setExpandLoading(true);
+    console.log('[Results] expand triggered');
 
     try {
       let lat, lng;
@@ -721,7 +742,12 @@ export default function ResultsScreen() {
       if (cfg.useActivityKeywordSearch) {
         rawMore = await getActivityPlacesMerged(
           { lat, lng },
-          { radius: EXPAND_RADIUS_M, maxPerKeyword: 12, maxTotal: 120 }
+          { radius: EXPAND_RADIUS_M, maxPerKeyword: 4, maxPerCategory: 3, maxTotal: 20 }
+        );
+      } else if (cfg.useMovieKeywordSearch) {
+        rawMore = await getMoviePlacesMerged(
+          { lat, lng },
+          { radius: EXPAND_RADIUS_M, maxPerKeyword: 12, maxPerChain: 3, maxTotal: 14 }
         );
       } else {
         rawMore = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
@@ -751,22 +777,28 @@ export default function ResultsScreen() {
           Number(p.rating) >= cfg.minRating &&
           (minRevMore <= 0 || (p.totalRatings || 0) >= minRevMore)
       );
+      if (cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch) {
+        rawMore = rawMore.filter((p) => p.isOpenNow !== false);
+      }
 
-      const isActivityLikeExpand =
-        category === 'activity' ||
-        ['indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
-      if (isActivityLikeExpand) {
+      const shouldDiversifyActivitiesExpand =
+        category === 'activity' || ['indoor', 'outdoor'].includes(plan.dateIdea);
+      if (shouldDiversifyActivitiesExpand) {
         rawMore = diversifyActivities(rawMore);
       }
 
       const curatedMore = curateResults(rawMore);
+      console.log('[Results] expand rawMore length:', rawMore.length);
 
       const moreResults = curatedMore
         .filter(p => !existingIds.has(p.id))
         .map((p) => {
           const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
           const distMiles  = distMeters / 1609.34;
-          const inArea = (p.address || '').toLowerCase().includes(areaNameLower);
+          const inArea =
+            cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch
+              ? distMiles <= 2.1
+              : (p.address || '').toLowerCase().includes(areaNameLower);
           return {
             id:           p.id,
             name:         p.name,
@@ -786,6 +818,7 @@ export default function ResultsScreen() {
             hoursToday:    null,
           };
         });
+      console.log('[Results] expand merged length:', places.length + moreResults.length);
 
       setPlaces((prev) => {
         const merged = [...prev, ...moreResults];
@@ -802,6 +835,7 @@ export default function ResultsScreen() {
         setExpanded(true);
         enrichTopPlaces(moreResults);
       }
+      console.log('[Results] expand final result count:', places.length + moreResults.length);
     } catch (e) {
       console.log('[Results] expand error:', e.message);
     }

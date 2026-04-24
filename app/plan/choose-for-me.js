@@ -127,13 +127,12 @@ async function fetchLocalRestaurants(coords, areaName, fetchRadius = 10000) {
   return addressMatch.length > 0 ? addressMatch : sortedQuality;
 }
 
-async function fetchLocalActivities(coords, areaName, fetchRadius = 12000) {
+async function fetchLocalActivities(coords, areaName, fetchRadius = 3500) {
   const { lat, lng } = coords;
   const raw = await getActivityPlacesMerged(
     { lat, lng },
-    { radius: fetchRadius, maxPerKeyword: 8, maxTotal: 80 }
+    { radius: fetchRadius, maxPerKeyword: 8, maxPerCategory: 2, maxTotal: 80 }
   );
-  const areaLower = (areaName || '').toLowerCase();
 
   const sortFn = (a, b) =>
     (Number(b.rating) - Number(a.rating)) ||
@@ -145,13 +144,9 @@ async function fetchLocalActivities(coords, areaName, fetchRadius = 12000) {
     .filter((p) => !isPassiveOutdoorActivityPlace(p))
     .filter((p) => p.rating != null && Number(p.rating) >= 4.0)
     .filter((p) => (p.totalRatings || 0) >= 20)
+    .filter((p) => p.isOpenNow !== false)
     .sort(sortFn);
-  if (!areaLower) return sortedQuality;
-
-  const addressMatch = sortedQuality.filter((p) =>
-    (p.address || '').toLowerCase().includes(areaLower)
-  );
-  return addressMatch.length > 0 ? addressMatch : sortedQuality;
+  return sortedQuality;
 }
 
 // ── Place Detail Sheet ────────────────────────────────────────

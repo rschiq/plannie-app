@@ -260,19 +260,27 @@ export function isPassiveOutdoorActivityPlace(place) {
 
 /** Single-keyword nearby searches merged (no OR strings). No park / tourist_attraction type. */
 const ACTIVITY_MERGE_KEYWORDS = [
-  'roller skating rink',
-  'ice skating rink',
   'bowling alley',
-  'arcade',
   'billiards',
+  'pool hall',
+  'arcade bar',
   'go kart',
   'mini golf',
   'golf driving range',
+  'driving range',
   'Topgolf',
+  'roller skating rink',
+  'skating rink',
+  'skate center',
+  'ice skating rink',
+  'ice arena',
+  'axe throwing',
+  'axe throwing bar',
   'escape room',
   'VR experience',
-  'axe throwing',
-  'batting cage',
+  'fun center',
+  'rage room',
+  'paint and sip',
 ];
 
 export async function getActivityPlacesMerged(coords, options = {}) {
@@ -282,6 +290,8 @@ export async function getActivityPlacesMerged(coords, options = {}) {
 
   const radius = options.radius ?? 10000;
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
+  const maxPerCategory = Math.min(Math.max(options.maxPerCategory ?? 2, 1), 5);
+  console.log('[ActivityEngine] start radius:', radius);
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -297,9 +307,26 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   };
 
   const byId = new Map();
+  const inferActivityCategory = (name = '') => {
+    const n = String(name).toLowerCase();
+    if (n.includes('bowling')) return 'bowling';
+    if (n.includes('billiard') || n.includes('pool hall')) return 'billiards';
+    if (n.includes('go kart') || n.includes('kart')) return 'go_kart';
+    if (n.includes('mini golf') || n.includes('putt')) return 'mini_golf';
+    if (n.includes('topgolf') || n.includes('driving range')) return 'golf_driving_range';
+    if (n.includes('roller') || n.includes('skating rink')) return 'roller_skating';
+    if (n.includes('ice skating') || n.includes('ice rink') || n.includes('ice arena')) return 'ice_skating';
+    if (n.includes('axe throw')) return 'axe_throwing';
+    if (n.includes('escape')) return 'escape_room';
+    if (n.includes('vr ') || n.includes('virtual reality')) return 'vr_experience';
+    if (n.includes('rage room')) return 'rage_room';
+    if (n.includes('paint and sip') || (n.includes('paint') && n.includes('sip'))) return 'paint_and_sip';
+    return 'other';
+  };
 
   await Promise.all(
     ACTIVITY_MERGE_KEYWORDS.map(async (keyword) => {
+      console.log('[ActivityEngine] keyword:', keyword);
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
         radius: String(radius),
@@ -312,6 +339,7 @@ export async function getActivityPlacesMerged(coords, options = {}) {
         const res = await fetch(url);
         const data = await res.json();
         const results = (data.results || []).slice(0, maxPerKeyword);
+        console.log('[ActivityEngine] keyword results:', keyword, results.length);
 
         results.forEach((p) => {
           if (!p?.place_id || byId.has(p.place_id)) return;
@@ -340,6 +368,8 @@ export async function getActivityPlacesMerged(coords, options = {}) {
             distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : null,
             isOpenNow: p.opening_hours?.open_now ?? null,
             priceLevel: p.price_level ?? null,
+            // Include keyword context so pool-hall/billiards aliases collapse reliably.
+            activityCategory: inferActivityCategory(`${p.name || ''} ${keyword}`),
           });
         });
       } catch {}
@@ -349,9 +379,153 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   const merged = Array.from(byId.values())
     .filter((p) => p.location)
     .filter((p) => !isPassiveOutdoorActivityPlace(p));
-  merged.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+  console.log('[ActivityEngine] merged total:', merged.length);
+  const byCategory = new Map();
+  merged.forEach((p) => {
+    const c = p.activityCategory || 'other';
+    if (!byCategory.has(c)) byCategory.set(c, []);
+    byCategory.get(c).push(p);
+  });
+
+  const scoreSort = (a, b) => {
+    const ar = Number(a.rating || 0);
+    const br = Number(b.rating || 0);
+    if (br !== ar) return br - ar;
+    return (b.totalRatings || 0) - (a.totalRatings || 0);
+  };
+
+  byCategory.forEach((arr) => arr.sort(scoreSort));
+
+  const categories = Array.from(byCategory.keys()).sort((a, b) => {
+    const topA = byCategory.get(a)?.[0];
+    const topB = byCategory.get(b)?.[0];
+    return scoreSort(topA || {}, topB || {});
+  });
+
+  const balanced = [];
+  categories.forEach((c) => {
+    const arr = byCategory.get(c) || [];
+    balanced.push(...arr.slice(0, maxPerCategory));
+  });
+  balanced.sort(scoreSort);
   const cap = options.maxTotal ?? 80;
-  return merged.slice(0, cap);
+  const final = balanced.slice(0, cap);
+  console.log('[ActivityEngine] final returned:', final.length);
+  return final;
+}
+
+const MOVIE_MERGE_KEYWORDS = ['movie theater', 'drive-in theater', 'drive in movie'];
+
+export async function getMoviePlacesMerged(coords, options = {}) {
+  const lat = coords?.lat;
+  const lng = coords?.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return [];
+
+  const radius = options.radius ?? 5000;
+  const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
+  const maxPerChain = Math.min(Math.max(options.maxPerChain ?? 3, 1), 5);
+  const maxTotal = Math.min(Math.max(options.maxTotal ?? 10, 1), 20);
+
+  const toMiles = (from, to) => {
+    if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
+    const R = 3958.8;
+    const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+    const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((from.lat * Math.PI) / 180) *
+        Math.cos((to.lat * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const inferChain = (name = '') => {
+    const n = String(name).toLowerCase();
+    if (n.includes('amc')) return 'amc';
+    if (n.includes('regal')) return 'regal';
+    if (n.includes('cinemark')) return 'cinemark';
+    if (n.includes('harkins')) return 'harkins';
+    if (n.includes('landmark')) return 'landmark';
+    if (n.includes('alamo drafthouse')) return 'alamo';
+    if (n.includes('cinepolis') || n.includes('cinépolis')) return 'cinepolis';
+    if (n.includes('ipic')) return 'ipic';
+    if (n.includes('showcase')) return 'showcase';
+    return 'independent';
+  };
+
+  const byId = new Map();
+  await Promise.all(
+    MOVIE_MERGE_KEYWORDS.map(async (keyword) => {
+      const params = new URLSearchParams({
+        location: `${lat},${lng}`,
+        radius: String(radius),
+        keyword,
+        key: GOOGLE_API_KEY,
+      });
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const results = (data.results || []).slice(0, maxPerKeyword);
+
+        results.forEach((p) => {
+          if (!p?.place_id || byId.has(p.place_id)) return;
+
+          const location =
+            p.geometry?.location &&
+            typeof p.geometry.location.lat === 'number' &&
+            typeof p.geometry.location.lng === 'number'
+              ? { lat: p.geometry.location.lat, lng: p.geometry.location.lng }
+              : null;
+          const distanceMiles = toMiles({ lat, lng }, location);
+          const lowerName = String(p.name || '').toLowerCase();
+          const movieFormat = lowerName.includes('drive-in') || lowerName.includes('drive in')
+            ? 'drive_in'
+            : 'standard_theater';
+
+          byId.set(p.place_id, {
+            id: p.place_id,
+            name: p.name,
+            rating: p.rating != null ? parseFloat(String(p.rating), 10) : null,
+            totalRatings: p.user_ratings_total || 0,
+            address: p.vicinity || p.formatted_address || '',
+            shortLocation: shortenVicinity(p.vicinity || p.formatted_address || ''),
+            types: p.types || [],
+            photoUrl: p.photos?.[0]?.photo_reference
+              ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+              : null,
+            location,
+            distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : null,
+            isOpenNow: p.opening_hours?.open_now ?? null,
+            priceLevel: p.price_level ?? null,
+            movieFormat,
+            movieChain: inferChain(p.name),
+          });
+        });
+      } catch {}
+    })
+  );
+
+  const merged = Array.from(byId.values()).filter((p) => p.location);
+  merged.sort((a, b) => {
+    const aDrive = a.movieFormat === 'drive_in' ? 1 : 0;
+    const bDrive = b.movieFormat === 'drive_in' ? 1 : 0;
+    if (bDrive !== aDrive) return bDrive - aDrive;
+    const ar = Number(a.rating || 0);
+    const br = Number(b.rating || 0);
+    if (br !== ar) return br - ar;
+    return (b.totalRatings || 0) - (a.totalRatings || 0);
+  });
+
+  const chainCounts = {};
+  const balanced = merged.filter((p) => {
+    const c = p.movieChain || 'independent';
+    chainCounts[c] = (chainCounts[c] || 0) + 1;
+    return chainCounts[c] <= maxPerChain;
+  });
+
+  return balanced.slice(0, maxTotal);
 }
 
 export async function fetchPlaceDetails(placeId) {
