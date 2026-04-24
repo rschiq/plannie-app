@@ -13,10 +13,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { fonts } from '../../constants/theme';
+
+let GoogleSignin = null;
+let statusCodes = {};
+try {
+  // Keep this optional in Expo Go / builds without native module.
+  const mod = require('@react-native-google-signin/google-signin');
+  GoogleSignin = mod.GoogleSignin;
+  statusCodes = mod.statusCodes || {};
+} catch {}
 
 
 // ── Animated auth button ──────────────────────────────────────
@@ -65,6 +73,7 @@ export default function WelcomeScreen() {
 
   // ── Native Google Sign-In ─────────────────────────────────
   useEffect(() => {
+    if (!GoogleSignin) return;
     GoogleSignin.configure({
       webClientId: '147011410264-mmt9lk15c0ksc233ud65npa2u7uok91r.apps.googleusercontent.com',
       offlineAccess: true,
@@ -90,6 +99,13 @@ export default function WelcomeScreen() {
   }
 
   async function handleGoogle() {
+    if (!GoogleSignin) {
+      Alert.alert(
+        'Google Sign-In unavailable',
+        'This build does not include the native Google Sign-In module.'
+      );
+      return;
+    }
     try {
       await GoogleSignin.hasPlayServices();
       const userInfo = await GoogleSignin.signIn();

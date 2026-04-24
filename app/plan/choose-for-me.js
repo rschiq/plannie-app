@@ -127,11 +127,11 @@ async function fetchLocalRestaurants(coords, areaName, fetchRadius = 10000) {
   return addressMatch.length > 0 ? addressMatch : sortedQuality;
 }
 
-async function fetchLocalActivities(coords, areaName, fetchRadius = 3500) {
+async function fetchLocalActivities(coords, areaName, fetchRadius = 3500, dateIdea = null) {
   const { lat, lng } = coords;
   const raw = await getActivityPlacesMerged(
     { lat, lng },
-    { radius: fetchRadius, maxPerKeyword: 8, maxPerCategory: 2, maxTotal: 80 }
+    { radius: fetchRadius, maxPerKeyword: 8, maxPerCategory: 2, maxTotal: 80, dateIdea }
   );
 
   const sortFn = (a, b) =>
@@ -144,7 +144,6 @@ async function fetchLocalActivities(coords, areaName, fetchRadius = 3500) {
     .filter((p) => !isPassiveOutdoorActivityPlace(p))
     .filter((p) => p.rating != null && Number(p.rating) >= 4.0)
     .filter((p) => (p.totalRatings || 0) >= 20)
-    .filter((p) => p.isOpenNow !== false)
     .sort(sortFn);
   return sortedQuality;
 }
@@ -432,7 +431,7 @@ export default function ChooseForMeScreen() {
     const start = Date.now();
     const [rest, acts] = await Promise.all([
       fetchLocalRestaurants(coords, areaName),
-      fetchLocalActivities(coords, areaName),
+      fetchLocalActivities(coords, areaName, 3500, plan.dateIdea),
     ]);
 
     // Minimum 3s loading so it feels intentional
@@ -462,7 +461,7 @@ export default function ChooseForMeScreen() {
     const coords = plan.coords;
     const [rest, acts] = await Promise.all([
       fetchLocalRestaurants(coords, '', 25000),
-      fetchLocalActivities(coords, '', 30000),
+      fetchLocalActivities(coords, '', 30000, plan.dateIdea),
     ]);
     setCuisineMap(buildCuisineMap(rest));
     setSelectedCuisine('all');
@@ -480,8 +479,8 @@ export default function ChooseForMeScreen() {
     if (!plan.coords?.lat || !plan.coords?.lng) return;
     setActivityExpandLoading(true);
     const areaName = (plan.location || '').split(',')[0].trim();
-    const local = await fetchLocalActivities(plan.coords, areaName, 12000);
-    const wider = await fetchLocalActivities(plan.coords, '', 28000);
+    const local = await fetchLocalActivities(plan.coords, areaName, 12000, plan.dateIdea);
+    const wider = await fetchLocalActivities(plan.coords, '', 28000, plan.dateIdea);
     const seen = new Set(local.map((p) => p.id));
     const extras = wider.filter((p) => !seen.has(p.id));
     setActivities([...local, ...extras]);

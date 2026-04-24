@@ -283,6 +283,25 @@ const ACTIVITY_MERGE_KEYWORDS = [
   'paint and sip',
 ];
 
+const INDOOR_ACTIVITY_KEYWORDS = [
+  'bowling alley',
+  'billiards',
+  'pool hall',
+  'arcade bar',
+  'escape room',
+  'VR experience',
+  'rage room',
+  'paint and sip',
+];
+
+const OUTDOOR_ACTIVITY_KEYWORDS = [
+  'go kart',
+  'mini golf',
+  'golf driving range',
+  'driving range',
+  'Topgolf',
+];
+
 export async function getActivityPlacesMerged(coords, options = {}) {
   const lat = coords?.lat;
   const lng = coords?.lng;
@@ -291,6 +310,13 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   const radius = options.radius ?? 10000;
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
   const maxPerCategory = Math.min(Math.max(options.maxPerCategory ?? 2, 1), 5);
+  const dateIdea = String(options.dateIdea || '').toLowerCase();
+  const activeKeywords =
+    dateIdea === 'indoor'
+      ? INDOOR_ACTIVITY_KEYWORDS
+      : dateIdea === 'outdoor'
+        ? OUTDOOR_ACTIVITY_KEYWORDS
+        : ACTIVITY_MERGE_KEYWORDS;
   console.log('[ActivityEngine] start radius:', radius);
 
   const toMiles = (from, to) => {
@@ -325,7 +351,7 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   };
 
   await Promise.all(
-    ACTIVITY_MERGE_KEYWORDS.map(async (keyword) => {
+    activeKeywords.map(async (keyword) => {
       console.log('[ActivityEngine] keyword:', keyword);
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
@@ -402,13 +428,18 @@ export async function getActivityPlacesMerged(coords, options = {}) {
     return scoreSort(topA || {}, topB || {});
   });
 
+  const STRONG_DOUBLE_CATEGORIES = new Set(['bowling', 'go_kart']);
   const balanced = [];
   categories.forEach((c) => {
     const arr = byCategory.get(c) || [];
-    balanced.push(...arr.slice(0, maxPerCategory));
+    const baseLimit = Math.max(1, maxPerCategory);
+    const perCategoryLimit = STRONG_DOUBLE_CATEGORIES.has(c)
+      ? Math.max(2, baseLimit)
+      : baseLimit;
+    balanced.push(...arr.slice(0, perCategoryLimit));
   });
   balanced.sort(scoreSort);
-  const cap = options.maxTotal ?? 80;
+  const cap = Math.min(options.maxTotal ?? 80, 10);
   const final = balanced.slice(0, cap);
   console.log('[ActivityEngine] final returned:', final.length);
   return final;

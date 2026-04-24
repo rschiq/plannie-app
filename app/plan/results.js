@@ -565,7 +565,13 @@ export default function ResultsScreen() {
       if (cfg.useActivityKeywordSearch) {
         raw = await getActivityPlacesMerged(
           { lat, lng },
-          { radius: fetchRadius, maxPerKeyword: 10, maxPerCategory: 2, maxTotal: 100 }
+          {
+            radius: fetchRadius,
+            maxPerKeyword: 10,
+            maxPerCategory: 2,
+            maxTotal: 100,
+            dateIdea: plan.dateIdea,
+          }
         );
       } else if (cfg.useMovieKeywordSearch) {
         raw = await getMoviePlacesMerged(
@@ -601,9 +607,7 @@ export default function ResultsScreen() {
           Number(p.rating) >= cfg.minRating &&
           (minRev <= 0 || (p.totalRatings || 0) >= minRev)
       );
-      if (usesControlledKeywordSearch) {
-        raw = raw.filter((p) => p.isOpenNow !== false);
-      }
+      // Keep closed places as fallback so lists don't collapse too aggressively.
 
       const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
       const isActivityLike =
@@ -742,7 +746,13 @@ export default function ResultsScreen() {
       if (cfg.useActivityKeywordSearch) {
         rawMore = await getActivityPlacesMerged(
           { lat, lng },
-          { radius: EXPAND_RADIUS_M, maxPerKeyword: 4, maxPerCategory: 3, maxTotal: 20 }
+          {
+            radius: EXPAND_RADIUS_M,
+            maxPerKeyword: 4,
+            maxPerCategory: 3,
+            maxTotal: 20,
+            dateIdea: plan.dateIdea,
+          }
         );
       } else if (cfg.useMovieKeywordSearch) {
         rawMore = await getMoviePlacesMerged(
@@ -777,9 +787,7 @@ export default function ResultsScreen() {
           Number(p.rating) >= cfg.minRating &&
           (minRevMore <= 0 || (p.totalRatings || 0) >= minRevMore)
       );
-      if (cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch) {
-        rawMore = rawMore.filter((p) => p.isOpenNow !== false);
-      }
+      // Keep closed places as fallback so expand can still add new options.
 
       const shouldDiversifyActivitiesExpand =
         category === 'activity' || ['indoor', 'outdoor'].includes(plan.dateIdea);
