@@ -285,8 +285,7 @@ const ACTIVITY_MERGE_KEYWORDS = [
 
 const INDOOR_ACTIVITY_KEYWORDS = [
   'bowling alley',
-  'billiards',
-  'pool hall',
+  'pool hall',       // covers billiards + pool hall
   'arcade bar',
   'escape room',
   'VR experience',
@@ -297,9 +296,9 @@ const INDOOR_ACTIVITY_KEYWORDS = [
 const OUTDOOR_ACTIVITY_KEYWORDS = [
   'go kart',
   'mini golf',
-  'golf driving range',
-  'driving range',
-  'Topgolf',
+  'driving range',        // covers Topgolf + golf driving range
+  'kayaking',             // covers kayak rental, paddle board, canoe rental
+  'water recreation',     // covers marina, boat rental, lake park, fishing pier
 ];
 
 export async function getActivityPlacesMerged(coords, options = {}) {
@@ -310,8 +309,9 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   const radius = options.radius ?? 10000;
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
   const dateIdea = String(options.dateIdea || '').toLowerCase();
-  const activeKeywords =
-    dateIdea === 'indoor'
+  const activeKeywords = Array.isArray(options.keywords) && options.keywords.length > 0
+    ? options.keywords
+    : dateIdea === 'indoor'
       ? INDOOR_ACTIVITY_KEYWORDS
       : dateIdea === 'outdoor'
         ? OUTDOOR_ACTIVITY_KEYWORDS
@@ -330,6 +330,13 @@ export async function getActivityPlacesMerged(coords, options = {}) {
         Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
+
+  // Layer 3: keywords where real venues are small — mega-parks have 15k+ reviews
+  const SMALL_VENUE_KEYWORDS = new Set([
+    'go kart', 'mini golf', 'golf driving range', 'driving range',
+    'roller skating rink', 'skating rink', 'skate center',
+    'ice skating rink', 'ice arena', 'axe throwing',
+  ]);
 
   const byId = new Map();
   const inferActivityCategory = (name = '') => {
@@ -369,6 +376,15 @@ export async function getActivityPlacesMerged(coords, options = {}) {
         results.forEach((p) => {
           if (!p?.place_id || byId.has(p.place_id)) return;
 
+          // Layer 1: training centers show up for driving range searches — their type is 'health'
+          if (
+            (keyword === 'driving range' || keyword === 'golf driving range') &&
+            (p.types || []).includes('health')
+          ) return;
+
+          // Layer 3: mega-venues (theme parks, resorts) have review counts no standalone venue reaches
+          if (SMALL_VENUE_KEYWORDS.has(keyword) && (p.user_ratings_total || 0) > 15000) return;
+
           const location =
             p.geometry?.location &&
             typeof p.geometry.location.lat === 'number' &&
@@ -403,12 +419,28 @@ export async function getActivityPlacesMerged(coords, options = {}) {
 
   const mergedResults = Array.from(byId.values())
     .filter((p) => p.location)
-    .filter((p) => !isPassiveOutdoorActivityPlace(p));
+    .filter((p) => {
+      if (dateIdea === 'outdoor') {
+        // For outdoor, skip the park/natural_feature type blocks — marinas, water
+        // recreation areas, and kayak spots are often tagged as parks in Google.
+        // Only block by name patterns (hiking trails, dog parks, etc.) and passive types.
+        const n = (p.name || '').toLowerCase();
+        const types = p.types || [];
+        if (n.includes('dog park') || n.includes('dog run') || n.includes('off-leash') || n.includes('bark park')) return false;
+        if (n.includes('trailhead') || n.includes('trail head')) return false;
+        if (n.includes('wildlife') || n.includes('wetland') || n.includes('marsh') || n.includes('slough')) return false;
+        if (n.includes('preserve') || n.includes('conservation area') || n.includes('nature reserve')) return false;
+        if (n.includes(' campground') || n.includes('rv park') || n.includes('campsite')) return false;
+        if (types.includes('rv_park')) return false;
+        return true;
+      }
+      return !isPassiveOutdoorActivityPlace(p);
+    });
   console.log('[ActivityEngine] merged total:', mergedResults.length);
   return mergedResults;
 }
 
-const MOVIE_MERGE_KEYWORDS = ['movie theater', 'drive-in theater', 'drive in movie'];
+const MOVIE_MERGE_KEYWORDS = ['movie theater'];
 
 export async function getMoviePlacesMerged(coords, options = {}) {
   const lat = coords?.lat;
@@ -502,15 +534,8 @@ export async function getMoviePlacesMerged(coords, options = {}) {
   );
 
   const merged = Array.from(byId.values()).filter((p) => p.location);
-  merged.sort((a, b) => {
-    const aDrive = a.movieFormat === 'drive_in' ? 1 : 0;
-    const bDrive = b.movieFormat === 'drive_in' ? 1 : 0;
-    if (bDrive !== aDrive) return bDrive - aDrive;
-    const ar = Number(a.rating || 0);
-    const br = Number(b.rating || 0);
-    if (br !== ar) return br - ar;
-    return (b.totalRatings || 0) - (a.totalRatings || 0);
-  });
+  // Sort nearest first — a good theater 10 miles away beats a great one 40 miles away
+  merged.sort((a, b) => (a.distanceMiles || 999) - (b.distanceMiles || 999));
 
   const chainCounts = {};
   const balanced = merged.filter((p) => {

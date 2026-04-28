@@ -1,43 +1,32 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { usePlan } from '../../hooks/usePlan';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors, fonts, radius } from '../../constants/theme';
 
-const OPTIONS_BY_CATEGORY = {
-  food: [
-    { key: 'brunch_dinner', label: 'Brunch / Dinner', emoji: '🥞' },
-    { key: 'coffee_dessert', label: 'Coffee / Dessert', emoji: '☕' },
-    { key: 'drinks', label: 'Drinks', emoji: '🍸' },
+const ACTIVITY_OPTIONS = {
+  indoor: [
+    { key: 'bowling_pool',  label: 'Bowling & Pool',     emoji: '🎳' },
+    { key: 'arcade_gaming', label: 'Arcade & Gaming',    emoji: '🕹️' },
+    { key: 'escape_vr',     label: 'Escape Rooms & VR',  emoji: '🔐' },
+    { key: 'arts_creative', label: 'Paint & Create',     emoji: '🎨' },
   ],
-  activity: [
-    { key: 'indoor',  label: 'Indoor',  emoji: '🎳' },
-    { key: 'outdoor', label: 'Outdoor', emoji: '🌤️' },
-    { key: 'movies',  label: 'Movies',  emoji: '🎬' },
+  outdoor: [
+    { key: 'water_activities', label: 'Water Activities', emoji: '🚣' },
+    { key: 'outdoor_games',    label: 'Outdoor Games',    emoji: '⛳' },
   ],
 };
 
-export default function DateIdeaScreen() {
+export default function ActivityTypeScreen() {
   const router = useRouter();
-  const { plan, updatePlan } = usePlan();
+  const { idea } = useLocalSearchParams();
   const [selected, setSelected] = useState(null);
 
-  const options = OPTIONS_BY_CATEGORY[plan.category] || [];
-
-  function handleSelect(value) {
-    setSelected(value);
-    console.log('[Plan Step 5] dateIdea_selected', { dateIdea: value });
-  }
+  const options = ACTIVITY_OPTIONS[idea] || [];
 
   function handleContinue() {
     if (!selected) return;
-    updatePlan({ dateIdea: selected });
-    if (selected === 'movies') {
-      router.push({ pathname: '/plan/results', params: { idea: selected } });
-    } else {
-      router.push({ pathname: '/plan/activityType', params: { idea: selected } });
-    }
+    router.push({ pathname: '/plan/results', params: { idea, activityType: selected } });
   }
 
   return (
@@ -46,8 +35,8 @@ export default function DateIdeaScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
           <Text style={s.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={s.step}>{selected === 'movies' ? 'Step 3 of 3' : 'Step 3 of 4'}</Text>
-        <Text style={s.title}>What kind of{'\n'}<Text style={{ fontStyle: 'italic' }}>vibe?</Text></Text>
+        <Text style={s.step}>Step 4 of 4</Text>
+        <Text style={s.title}>What type of{'\n'}<Text style={{ fontStyle: 'italic' }}>activity?</Text></Text>
       </View>
 
       <View style={s.grid}>
@@ -55,12 +44,14 @@ export default function DateIdeaScreen() {
           <TouchableOpacity
             key={option.key}
             style={[s.card, selected === option.key && s.cardActive]}
-            onPress={() => handleSelect(option.key)}
+            onPress={() => setSelected(option.key)}
             activeOpacity={0.85}
           >
             <Text style={s.cardEmoji}>{option.emoji}</Text>
             <View style={s.cardText}>
-              <Text style={[s.cardLabel, selected === option.key && s.cardLabelActive]}>{option.label}</Text>
+              <Text style={[s.cardLabel, selected === option.key && s.cardLabelActive]}>
+                {option.label}
+              </Text>
             </View>
             {selected === option.key && <View style={s.checkDot} />}
           </TouchableOpacity>
@@ -79,7 +70,6 @@ export default function DateIdeaScreen() {
           <Text style={s.continueBtnText}>Find Places →</Text>
         </TouchableOpacity>
       </View>
-
     </SafeAreaView>
   );
 }

@@ -167,28 +167,40 @@ export default function DetailsScreen() {
 
   async function useCurrentLocation() {
     setLocLoading(true);
+    setCityVal('Detecting location…');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         alert('Location permission denied. Please enable it in Settings.');
+        setCityVal('');
         setLocLoading(false);
         return;
       }
+
       const loc = await Location.getCurrentPositionAsync({});
-      setCityVal('Current Location');
       const lat = loc?.coords?.latitude;
       const lng = loc?.coords?.longitude;
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        setCoords({ lat, lng });
-        console.log('[Plan Step 1] location_selected_from_device', {
-          location: 'Current Location',
-          coords: { lat, lng },
-        });
-      } else {
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
         setCoords(null);
+        setCityVal('');
+        setLocLoading(false);
+        return;
       }
+
+      setCoords({ lat, lng });
+
+      const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      const city    = place?.city || place?.subregion || '';
+      const region  = place?.region || '';
+      const country = place?.isoCountryCode === 'US' ? 'USA' : (place?.country || '');
+      const label   = [city, region, country].filter(Boolean).join(', ') || 'My Location';
+
+      setCityVal(label);
+      console.log('[Plan Step 1] location_selected_from_device', { location: label, coords: { lat, lng } });
     } catch (e) {
       console.log('Location error:', e);
+      setCityVal('');
     }
     setLocLoading(false);
   }

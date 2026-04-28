@@ -7,7 +7,7 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { usePlan } from '../../hooks/usePlan';
 import { colors, fonts, radius, shadow } from '../../constants/theme';
 import {
@@ -56,7 +56,7 @@ const SUBCATEGORY_CONFIG = {
     excludeKeywords: [],
     displayTitle: 'Indoor Activities',
     minRating: 4.0,
-    minReviews: 20,
+    minReviews: 5,
     fetchRadius: 3500,
   },
   outdoor: {
@@ -75,10 +75,21 @@ const SUBCATEGORY_CONFIG = {
     keyword: null,
     excludeKeywords: [],
     displayTitle: 'Movies',
-    minRating: 4.2,
-    minReviews: 30,
-    fetchRadius: 3000,
+    minRating: 3.8,
+    minReviews: 20,
+    fetchRadius: 40000,
   },
+};
+
+// ── Per-activity-type keyword + radius config ──────────────────
+// Each entry: 1–3 targeted keywords → 1–3 API calls instead of full fan-out
+const ACTIVITY_TYPE_CONFIG = {
+  bowling_pool:     { keywords: ['bowling alley', 'pool hall'],            fetchRadius: 25000 },
+  arcade_gaming:    { keywords: ['arcade bar'],                             fetchRadius: 25000 },
+  escape_vr:        { keywords: ['escape room', 'VR experience'],           fetchRadius: 25000 },
+  arts_creative:    { keywords: ['paint and sip', 'rage room'],             fetchRadius: 25000 },
+  water_activities: { keywords: ['kayaking', 'water recreation'],           fetchRadius: 15000 },
+  outdoor_games:    { keywords: ['go kart', 'mini golf', 'driving range'],  fetchRadius: 40000 },
 };
 
 // ── Cuisine tabs (brunch_dinner only) ─────────────────────────
@@ -182,6 +193,7 @@ const BLOCK_LIST = [
   'gym','fitness center','crossfit','ymca','planet fitness','orangetheory',
   'hospital','urgent care','clinic','dental','pharmacy',
   'school','church','storage','auto repair','car wash',
+  'golftec','golf tec',
   'trampoline','sky zone','urban air','bounce','chuck e cheese',
   'hard rock cafe','cheesecake factory','buffalo wild wings',
   'ihop',"denny's",
@@ -195,7 +207,13 @@ function isBlockedPlace(place) {
   if (BLOCK_LIST.some(k => name.includes(k))) return true;
   if (types.includes('grocery_or_supermarket') || types.includes('supermarket')) return true;
   if (types.includes('department_store') || types.includes('shopping_mall')) return true;
-  if (types.includes('lodging')) return true;
+  if (types.includes('lodging') && !types.includes('park')) return true;
+  if (
+    name.includes('golf shop') ||
+    name.includes('pro shop') ||
+    name.includes('sporting goods') ||
+    name.includes('equipment')
+  ) return true;
   return false;
 }
 
@@ -468,6 +486,18 @@ const nav = StyleSheet.create({
   tabLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.gray2 },
 });
 
+// ── Results cache — persists across navigations within a session ─
+const _resultsCache = new Map();
+
+function getCacheKey(dateIdea, coords, cuisineKeyword, activityType) {
+  if (!dateIdea || !coords?.lat || !coords?.lng) return null;
+  if (cuisineKeyword) return null; // cuisine fetches are always fresh
+  const lat = coords.lat.toFixed(3);
+  const lng = coords.lng.toFixed(3);
+  const base = `${dateIdea}|${lat}|${lng}`;
+  return activityType ? `${base}|${activityType}` : base;
+}
+
 // ── View builder ───────────────────────────────────────────────
 function buildVisibleResults(fullResults, expanded) {
   const grouped = {};
@@ -518,10 +548,14 @@ export default function ResultsScreen() {
   const [selectedCuisine, setSelectedCuisine] = useState(null);
   const { saved, savePlace, removePlace } = useSavedPlaces();
 
-  const enrichedRef = useRef(new Set());
+  const enrichedRef  = useRef(new Set());
+  const fetchingRef  = useRef(false);
 
+  const { idea: ideaParam, activityType: activityTypeParam } = useLocalSearchParams();
+  const dateIdea = ideaParam || plan.dateIdea;
+  const activityType = activityTypeParam || null;
   const category = plan.category || 'food';
-  const subcategoryConfig = getSubcategoryConfig(category, plan.dateIdea);
+  const subcategoryConfig = getSubcategoryConfig(category, dateIdea);
   const label = subcategoryConfig.displayTitle;
   const locationLabel = plan.location || '';
   const visibleResults = buildVisibleResults(fullResults, expanded);
@@ -530,9 +564,13 @@ export default function ResultsScreen() {
   const showFavoritesOnCards =
     category === 'food' ||
     category === 'activity' ||
-    ['brunch_dinner', 'coffee_dessert', 'drinks', 'indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
+    ['brunch_dinner', 'coffee_dessert', 'drinks', 'indoor', 'outdoor', 'movies'].includes(dateIdea);
 
-  useEffect(() => { fetchPlaces(); }, []);
+  useEffect(() => {
+    let active = true;
+    if (active) fetchPlaces();
+    return () => { active = false; };
+  }, []);
 
   // ── Cuisine select — refetch with new keyword ────────────────
   function handleCuisineSelect(key) {
@@ -547,9 +585,25 @@ export default function ResultsScreen() {
 
   // ── Fetch ────────────────────────────────────────────────────
   async function fetchPlaces(cuisineKeyword = null) {
+    if (fetchingRef.current && !cuisineKeyword) return;
+    fetchingRef.current = true;
     setLoading(true);
     setError(null);
     const startTime = Date.now();
+
+    const cacheKey = getCacheKey(dateIdea, plan.coords, cuisineKeyword, activityType);
+    if (cacheKey && _resultsCache.has(cacheKey)) {
+      const cached = _resultsCache.get(cacheKey);
+      console.log('[Results] cache hit:', cacheKey, cached.length, 'results');
+      setFullResults(cached);
+      setExpanded(false);
+      enrichTopPlaces(cached.slice(0, 10));
+      await minLoadingDisplaySince(startTime);
+      setLoading(false);
+      fetchingRef.current = false;
+      return;
+    }
+
     try {
       const runGate = await consumeRunIfAvailable();
       if (!runGate.allowed) {
@@ -576,8 +630,10 @@ export default function ResultsScreen() {
 
       const areaName = locationLabel.split(',')[0].trim();
       const areaNameLower = areaName.toLowerCase();
-      const cfg = getSubcategoryConfig(category, plan.dateIdea);
-      const fetchRadius = cfg.fetchRadius || (category === 'activity' ? 3000 : 3500);
+      const cfg = getSubcategoryConfig(category, dateIdea);
+      const activityTypeCfg = activityType ? ACTIVITY_TYPE_CONFIG[activityType] : null;
+      const fetchRadius = activityTypeCfg?.fetchRadius ?? cfg.fetchRadius ?? (category === 'activity' ? 3000 : 3500);
+      const activityKeywords = activityTypeCfg?.keywords ?? null;
 
       let raw;
       if (cfg.useActivityKeywordSearch) {
@@ -588,7 +644,8 @@ export default function ResultsScreen() {
             maxPerKeyword: 10,
             maxPerCategory: 2,
             maxTotal: 100,
-            dateIdea: plan.dateIdea,
+            dateIdea: dateIdea,
+            keywords: activityKeywords,
           }
         );
       } else if (cfg.useMovieKeywordSearch) {
@@ -608,7 +665,44 @@ export default function ResultsScreen() {
       raw = raw.filter((p) => !isBlockedPlace(p));
       const usesControlledKeywordSearch = cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch;
       if (cfg.useActivityKeywordSearch) {
-        raw = raw.filter((p) => !isPassiveOutdoorActivityPlace(p));
+        if (dateIdea === 'outdoor') {
+          // For water activities, skip passive-venue name filter — state parks with boat launches
+          // and kayak access (e.g. Wenberg) look like campgrounds to Google but are valid results.
+          if (activityType !== 'water_activities') {
+            raw = raw.filter((p) => {
+              const n = (p.name || '').toLowerCase();
+              const types = p.types || [];
+              if (n.includes('dog park') || n.includes('dog run') || n.includes('off-leash') || n.includes('bark park')) return false;
+              if (n.includes('trailhead') || n.includes('trail head')) return false;
+              if (n.includes('wildlife') || n.includes('wetland') || n.includes('marsh') || n.includes('slough')) return false;
+              if (n.includes('preserve') || n.includes('conservation area') || n.includes('nature reserve')) return false;
+              if (n.includes(' campground') || n.includes('rv park') || n.includes('campsite')) return false;
+              if (types.includes('rv_park')) return false;
+              return true;
+            });
+          }
+          // Bars and stores don't belong in any outdoor activity results
+          raw = raw.filter((p) => {
+            const types = p.types || [];
+            return !types.includes('bar') && !types.includes('night_club') && !types.includes('store');
+          });
+        } else {
+          // Indoor: isPassiveOutdoorActivityPlace blocks parks/trails but intentionally allows
+          // bar-type venues — arcade bars and pool halls are valid indoor activity spots.
+          raw = raw.filter((p) => !isPassiveOutdoorActivityPlace(p));
+          // Block stores regardless — grocery/farm stores slip through for indoor
+          raw = raw.filter((p) => !(p.types || []).includes('store'));
+        }
+        // Layer 2: mega theme parks that slip past review-count filter (belt-and-suspenders)
+        const MEGA_PARKS = [
+          'universal studios', 'disneyland', 'disney springs',
+          'six flags', 'magic mountain', "knott's berry", 'great america',
+          'busch gardens', 'cedar point', 'nintendo world', 'legoland',
+        ];
+        raw = raw.filter((p) => {
+          const n = (p.name || '').toLowerCase();
+          return !MEGA_PARKS.some((k) => n.includes(k));
+        });
       }
 
       if (cfg.excludeKeywords?.length) {
@@ -618,21 +712,28 @@ export default function ResultsScreen() {
         });
       }
 
-      const minRev = cfg.minReviews ?? 0;
-      raw = raw.filter(
-        (p) =>
+      const isOutdoor = dateIdea === 'outdoor';
+      const isIndoor  = dateIdea === 'indoor';
+      const minRating = (isOutdoor || isIndoor) ? 3.0 : (cfg.minRating ?? 4.0);
+      const minRev    = (isOutdoor || isIndoor) ? 0 : (cfg.minReviews ?? 0);
+      raw = raw.filter((p) => {
+        // Parks and recreation areas in rural areas often have no Google rating —
+        // let them through and rely on the keyword search as the quality gate.
+        if (isOutdoor) return p.rating == null || Number(p.rating) >= minRating;
+        return (
           p.rating != null &&
-          Number(p.rating) >= cfg.minRating &&
+          Number(p.rating) >= minRating &&
           (minRev <= 0 || (p.totalRatings || 0) >= minRev)
-      );
+        );
+      });
       // Keep closed places as fallback so lists don't collapse too aggressively.
 
       const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
       const isActivityLike =
         category === 'activity' ||
-        ['indoor', 'outdoor', 'movies'].includes(plan.dateIdea);
+        ['indoor', 'outdoor', 'movies'].includes(dateIdea);
       const shouldDiversifyActivities =
-        category === 'activity' || ['indoor', 'outdoor'].includes(plan.dateIdea);
+        category === 'activity' || ['indoor', 'outdoor'].includes(dateIdea);
 
       let mainPool;
       if (cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch) {
@@ -677,6 +778,7 @@ export default function ResultsScreen() {
         };
       });
 
+      if (cacheKey) _resultsCache.set(cacheKey, mapped);
       setFullResults(mapped);
       setExpanded(false);
       enrichTopPlaces(mapped.slice(0, 10));
@@ -686,6 +788,7 @@ export default function ResultsScreen() {
     }
     await minLoadingDisplaySince(startTime);
     setLoading(false);
+    fetchingRef.current = false;
   }
 
 
@@ -858,7 +961,7 @@ export default function ResultsScreen() {
         </View>
 
         {/* ── Cuisine tabs — brunch/dinner only ── */}
-        {plan.dateIdea === 'brunch_dinner' && (
+        {dateIdea === 'brunch_dinner' && (
           <View style={s.cuisineTabsWrapper}>
             <ScrollView
               horizontal
@@ -952,7 +1055,7 @@ export default function ResultsScreen() {
             ))}
 
             {/* ── Expand banner — only when there are more items to reveal ── */}
-            {!expanded && fullResults.length > visibleResults.length && (
+            {!expanded && (fullResults.length > visibleResults.length || dateIdea === 'outdoor') && (
               <View style={[s.expandBanner, { marginTop: 24 }]}>
                 <Text style={s.expandBannerText}>
                   Want to see more options?
