@@ -1,33 +1,29 @@
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors, fonts, radius } from '../constants/theme';
 
-export default function PaywallModal({
-  visible,
-  onClose,
-  onUpgrade,
-  onGet20MorePlans,
-  onGet50MorePlans,
-}) {
+export default function PaywallModal({ visible, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.card}>
-          <Text style={s.title}>You&apos;ve used your free plans 🎯</Text>
-          <Text style={s.message}>Want more ideas for your next date?</Text>
+          <Text style={s.emoji}>✨</Text>
+          <Text style={s.title}>You've used your 3 free plans this month</Text>
+          <Text style={s.message}>
+            Your free plans reset in 30 days. Unlimited access is coming soon.
+          </Text>
 
-          <TouchableOpacity style={s.primaryBtn} onPress={onUpgrade} activeOpacity={0.85}>
-            <Text style={s.primaryText}>Upgrade to Premium</Text>
+          <View style={s.valueList}>
+            <Text style={s.valueItem}>✔  See more places nearby</Text>
+            <Text style={s.valueItem}>✔  Try different ideas instantly</Text>
+            <Text style={s.valueItem}>✔  Get better matches</Text>
+          </View>
+
+          <TouchableOpacity style={s.comingSoonBtn} activeOpacity={0.75}>
+            <Text style={s.comingSoonText}>Unlock unlimited — coming soon</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.addOnBtn} onPress={onGet20MorePlans} activeOpacity={0.85}>
-            <Text style={s.addOnText}>Get 20 more plans</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.addOnBtn} onPress={onGet50MorePlans} activeOpacity={0.85}>
-            <Text style={s.addOnText}>Get 50 more plans</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.secondaryBtn} onPress={onClose} activeOpacity={0.85}>
-            <Text style={s.secondaryText}>Maybe later</Text>
+          <TouchableOpacity style={s.closeBtn} onPress={onClose} activeOpacity={0.85}>
+            <Text style={s.closeBtnText}>Come back next month</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -38,7 +34,7 @@ export default function PaywallModal({
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -46,61 +42,72 @@ const s = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#F2EDE8',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: colors.cream2,
+    borderRadius: radius.lg,
+    padding: 28,
+    borderWidth: 1,
+    borderColor: colors.gray4,
+    alignItems: 'center',
+  },
+  emoji: {
+    fontSize: 36,
+    marginBottom: 14,
   },
   title: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '700',
-    color: '#1C1628',
-    marginBottom: 8,
+    fontFamily: fonts.display,
+    fontSize: 22,
+    color: colors.charcoal,
     textAlign: 'center',
+    lineHeight: 28,
+    marginBottom: 10,
   },
   message: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#5B5565',
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.gray,
     textAlign: 'center',
-    marginBottom: 16,
+    lineHeight: 20,
+    marginBottom: 20,
   },
-  primaryBtn: {
-    backgroundColor: '#D4956F',
-    borderRadius: 999,
-    paddingVertical: 14,
+  valueList: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.cream3,
+    borderRadius: radius.sm,
+    padding: 16,
+    gap: 10,
+    marginBottom: 24,
+  },
+  valueItem: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.charcoal2,
+    lineHeight: 20,
+  },
+  comingSoonBtn: {
+    alignSelf: 'stretch',
+    borderRadius: radius.full,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: colors.rose,
+    marginBottom: 12,
+    opacity: 0.5,
   },
-  primaryText: {
+  comingSoonText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: colors.rose,
+  },
+  closeBtn: {
+    alignSelf: 'stretch',
+    borderRadius: radius.full,
+    paddingVertical: 15,
+    alignItems: 'center',
+    backgroundColor: colors.rose,
+  },
+  closeBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
     color: '#F2EDE8',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  addOnBtn: {
-    borderWidth: 1,
-    borderColor: '#D4956F',
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: '#FFF8F3',
-  },
-  addOnText: {
-    color: '#8B5A3E',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: '#D8D2CD',
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  secondaryText: {
-    color: '#1C1628',
-    fontSize: 14,
-    fontWeight: '500',
   },
 });

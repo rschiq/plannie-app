@@ -7,7 +7,7 @@ import { colors, fonts, radius } from '../../constants/theme';
 import { fetchPlaceDetails, getPlacesByCategory } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
-import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
+import { consumeRunIfAvailable } from '../../utils/runLimiter';
 import PaywallModal from '../../components/PaywallModal';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
@@ -251,22 +251,7 @@ export default function SurpriseActivity() {
         </SafeAreaView>
       </Modal>
 
-      <PaywallModal
-        visible={showPaywall}
-        onClose={() => setShowPaywall(false)}
-        onUpgrade={() => {
-          console.log('[Paywall] upgrade clicked');
-          setShowPaywall(false);
-        }}
-        onGet20MorePlans={async () => {
-          await addExtraRuns(20);
-          setShowPaywall(false);
-        }}
-        onGet50MorePlans={async () => {
-          await addExtraRuns(50);
-          setShowPaywall(false);
-        }}
-      />
+      <PaywallModal visible={showPaywall} onClose={() => setShowPaywall(false)} />
     </SafeAreaView>
   );
 }

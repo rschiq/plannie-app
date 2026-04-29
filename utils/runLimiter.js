@@ -1,9 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const RUNS_USED_KEY = '@plannie_runs_used';
+const RUNS_USED_KEY  = '@plannie_runs_used';
 const EXTRA_RUNS_KEY = '@plannie_extra_runs';
-const FREE_RUN_LIMIT = 3;
-const DEV_MODE = true;
+const LAST_RESET_KEY = '@plannie_last_reset';
+const FREE_RUN_LIMIT    = 3;
+const RESET_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Automatically true in Expo dev builds, false in production.
+const DEV_MODE = __DEV__;
+
+async function checkMonthlyReset() {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_RESET_KEY);
+    const lastReset = raw ? parseInt(raw, 10) : null;
+    const now = Date.now();
+    if (!lastReset || now - lastReset >= RESET_INTERVAL_MS) {
+      await AsyncStorage.setItem(RUNS_USED_KEY, '0');
+      await AsyncStorage.setItem(LAST_RESET_KEY, String(now));
+      console.log('[RunLimit] monthly reset applied');
+    }
+  } catch {}
+}
 
 export async function getRunsUsed() {
   try {
@@ -41,27 +58,22 @@ export async function consumeRunIfAvailable() {
     return { allowed: true, runsUsed: null, extraRuns: null };
   }
 
-  const runsUsed = await getRunsUsed();
-  console.log('[RunLimit] runsUsed:', runsUsed);
-  const extraRuns = await getExtraRuns();
-  console.log('[AddOn] extraRuns:', extraRuns);
+  await checkMonthlyReset();
 
-  // Priority: consume free runs first, then extra runs.
+  const runsUsed  = await getRunsUsed();
+  const extraRuns = await getExtraRuns();
+  console.log('[RunLimit] runsUsed:', runsUsed, 'extraRuns:', extraRuns);
+
   if (runsUsed < FREE_RUN_LIMIT) {
-    const nextRunsUsed = runsUsed + 1;
-    try {
-      await AsyncStorage.setItem(RUNS_USED_KEY, String(nextRunsUsed));
-    } catch {}
-    return { allowed: true, runsUsed: nextRunsUsed, extraRuns };
+    const next = runsUsed + 1;
+    try { await AsyncStorage.setItem(RUNS_USED_KEY, String(next)); } catch {}
+    return { allowed: true, runsUsed: next, extraRuns };
   }
 
   if (extraRuns > 0) {
-    const nextExtraRuns = extraRuns - 1;
-    try {
-      await AsyncStorage.setItem(EXTRA_RUNS_KEY, String(nextExtraRuns));
-    } catch {}
-    console.log('[AddOn] extraRuns:', nextExtraRuns);
-    return { allowed: true, runsUsed, extraRuns: nextExtraRuns };
+    const next = extraRuns - 1;
+    try { await AsyncStorage.setItem(EXTRA_RUNS_KEY, String(next)); } catch {}
+    return { allowed: true, runsUsed, extraRuns: next };
   }
 
   return { allowed: false, runsUsed, extraRuns };

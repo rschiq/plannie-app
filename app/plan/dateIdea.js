@@ -33,10 +33,10 @@ export default function DateIdeaScreen() {
   function handleContinue() {
     if (!selected) return;
     updatePlan({ dateIdea: selected });
-    if (selected === 'movies') {
-      router.push({ pathname: '/plan/results', params: { idea: selected } });
-    } else {
+    if (selected === 'indoor' || selected === 'outdoor') {
       router.push({ pathname: '/plan/activityType', params: { idea: selected } });
+    } else {
+      router.push({ pathname: '/plan/results', params: { idea: selected } });
     }
   }
 
@@ -46,7 +46,7 @@ export default function DateIdeaScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
           <Text style={s.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={s.step}>{selected === 'movies' ? 'Step 3 of 3' : 'Step 3 of 4'}</Text>
+        <Text style={s.step}>{(selected === 'indoor' || selected === 'outdoor') ? 'Step 3 of 4' : 'Step 3 of 3'}</Text>
         <Text style={s.title}>What kind of{'\n'}<Text style={{ fontStyle: 'italic' }}>vibe?</Text></Text>
       </View>
 

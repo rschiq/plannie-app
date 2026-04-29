@@ -13,6 +13,8 @@ import {
   getActivityPlacesMerged,
   isPassiveOutdoorActivityPlace,
 } from '../../services/placesService';
+import { consumeRunIfAvailable } from '../../utils/runLimiter';
+import PaywallModal from '../../components/PaywallModal';
 
 const SCREEN_W = Dimensions.get('window').width;
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
@@ -361,7 +363,7 @@ function PlaceCard({
 
             {canSwap && (
               <TouchableOpacity style={s.swapBtn} onPress={onSwap} activeOpacity={0.8}>
-                <Text style={s.swapBtnText}>Swap</Text>
+                <Text style={s.swapBtnText}>Swap 🔒</Text>
               </TouchableOpacity>
             )}
           </>
@@ -404,6 +406,7 @@ export default function ChooseForMeScreen() {
   const [noResults, setNoResults]                 = useState(false);
   const [saved, setSaved]                         = useState(false);
   const [detailPlace, setDetailPlace]             = useState(null);
+  const [showPaywall, setShowPaywall]             = useState(false);
   const runRef            = useRef(false);
   const expandedCuisines  = useRef(new Set());
 
@@ -424,6 +427,14 @@ export default function ChooseForMeScreen() {
     if (!coords?.lat || !coords?.lng) {
       setLoading(false);
       setNoResults(true);
+      runRef.current = false;
+      return;
+    }
+
+    const runGate = await consumeRunIfAvailable();
+    if (!runGate.allowed) {
+      setShowPaywall(true);
+      setLoading(false);
       runRef.current = false;
       return;
     }
@@ -675,9 +686,7 @@ export default function ChooseForMeScreen() {
           emoji="🍽️"
           place={restaurant}
           onPress={() => restaurant && setDetailPlace(restaurant)}
-          onSwap={() =>
-            setRestaurantIdx((i) => (currentList.length ? (i + 1) % currentList.length : 0))
-          }
+          onSwap={() => setShowPaywall(true)}
           canSwap={currentList.length > 1}
           tabsContent={
             currentList.length > 0 && availableTabs.length > 0 ? (
@@ -733,7 +742,7 @@ export default function ChooseForMeScreen() {
           emoji="🎯"
           place={activity}
           onPress={() => activity && setDetailPlace(activity)}
-          onSwap={() => setActivityIdx(i => (i + 1) % activities.length)}
+          onSwap={() => setShowPaywall(true)}
           canSwap={activities.length > 1}
           loadingOverlay={activityExpandLoading}
           emptyTitle="Activity"
@@ -775,6 +784,11 @@ export default function ChooseForMeScreen() {
       </ScrollView>
 
       <PlaceDetailSheet place={detailPlace} onClose={() => setDetailPlace(null)} />
+
+      <PaywallModal
+        visible={showPaywall}
+        onClose={() => { setShowPaywall(false); runRef.current = false; }}
+      />
     </SafeAreaView>
   );
 }

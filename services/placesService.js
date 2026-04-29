@@ -430,8 +430,10 @@ export async function getActivityPlacesMerged(coords, options = {}) {
         if (n.includes('trailhead') || n.includes('trail head')) return false;
         if (n.includes('wildlife') || n.includes('wetland') || n.includes('marsh') || n.includes('slough')) return false;
         if (n.includes('preserve') || n.includes('conservation area') || n.includes('nature reserve')) return false;
-        if (n.includes(' campground') || n.includes('rv park') || n.includes('campsite')) return false;
-        if (types.includes('rv_park')) return false;
+        const WATER_TERMS = ['kayak', 'paddle', 'boat', 'canoe', 'marina', 'swim', 'beach', 'waterfront', 'water recreation', 'lake'];
+        const hasWaterTerm = WATER_TERMS.some((t) => n.includes(t));
+        if ((n.includes(' campground') || n.includes('rv park') || n.includes('campsite')) && !hasWaterTerm) return false;
+        if (types.includes('rv_park') && !hasWaterTerm) return false;
         return true;
       }
       return !isPassiveOutdoorActivityPlace(p);

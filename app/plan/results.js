@@ -18,7 +18,7 @@ import {
 } from '../../services/placesService';
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
-import { addExtraRuns, consumeRunIfAvailable } from '../../utils/runLimiter';
+import { consumeRunIfAvailable } from '../../utils/runLimiter';
 import PaywallModal from '../../components/PaywallModal';
 import { useSavedPlaces } from '../../hooks/useSavedPlaces';
 import ResultsPlaceCard from '../../components/ResultsPlaceCard';
@@ -88,9 +88,15 @@ const ACTIVITY_TYPE_CONFIG = {
   arcade_gaming:    { keywords: ['arcade bar'],                             fetchRadius: 25000 },
   escape_vr:        { keywords: ['escape room', 'VR experience'],           fetchRadius: 25000 },
   arts_creative:    { keywords: ['paint and sip', 'rage room'],             fetchRadius: 25000 },
-  water_activities: { keywords: ['kayaking', 'water recreation'],           fetchRadius: 15000 },
+  water_activities: { keywords: ['kayaking', 'water recreation', 'boat launch'], fetchRadius: 15000 },
   outdoor_games:    { keywords: ['go kart', 'mini golf', 'driving range'],  fetchRadius: 40000 },
 };
+
+// Water-access terms used to boost scoring for water_activities
+const WATER_SCORE_TERMS = [
+  'kayak', 'paddle', 'paddleboard', 'boat', 'launch', 'lake', 'beach',
+  'waterfront', 'marina', 'canoe', 'float', 'swim', 'row', 'fishing', 'pier', 'dock',
+];
 
 // ── Cuisine tabs (brunch_dinner only) ─────────────────────────
 const CUISINE_TABS = [
@@ -238,9 +244,67 @@ function getCuisine(types = [], name = '') {
   return null;
 }
 
-function curateResults(raw) {
-  raw.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
-  return raw;
+function computeFinalScore({ distMiles, inArea, rating, totalRatings, nameBonus = 0 }) {
+  let score = 0;
+  if (inArea) score += 25;
+  const d = parseFloat(distMiles) || 999;
+  if (d <= 3) score += 20;
+  else if (d <= 7) score += 10;
+  else if (d <= 12) score += 0;
+  else if (d <= 20) score -= 15;
+  else score -= 35;
+  const r = rating != null ? parseFloat(rating) : null;
+  score += r != null ? r * 8 : -20;
+  const reviews = totalRatings || 0;
+  score += Math.min(Math.log10(reviews + 1) * 6, 18);
+  if (reviews < 5) score -= 15;
+  else if (reviews < 10) score -= 10;
+  else if (reviews < 30) score -= 5;
+  score += nameBonus;
+  return Math.round(score * 10) / 10;
+}
+
+function getDedupeKey(p) {
+  if (p.location?.lat != null && p.location?.lng != null) {
+    return `${p.location.lat.toFixed(3)},${p.location.lng.toFixed(3)}`;
+  }
+  const name2 = (p.name || '').toLowerCase().split(/\s+/).slice(0, 2).join(' ');
+  const addr1 = (p.address || '').toLowerCase().split(',')[0].trim();
+  return `${name2}|${addr1}`;
+}
+
+function deduplicatePlaces(places) {
+  const best = new Map();
+  places.forEach((p) => {
+    const k = getDedupeKey(p);
+    if (!best.has(k) || (p.finalScore || 0) > (best.get(k).finalScore || 0)) {
+      best.set(k, p);
+    }
+  });
+  const keptIds = new Set(Array.from(best.values()).map((p) => p.id));
+  return places.filter((p) => keptIds.has(p.id));
+}
+
+function getLockedCategoryLabel(idea) {
+  switch (idea) {
+    case 'brunch_dinner':  return 'Restaurant nearby';
+    case 'coffee_dessert': return 'Coffee spot nearby';
+    case 'drinks':         return 'Drinks spot nearby';
+    case 'movies':         return 'Movie option nearby';
+    case 'bowling_pool':
+    case 'arcade_gaming':
+    case 'escape_vr':
+    case 'arts_creative':  return 'Activity nearby';
+    case 'water_activities':
+    case 'outdoor_games':  return 'Outdoor activity nearby';
+    default:               return 'Place nearby';
+  }
+}
+
+function getRatingHint(rating) {
+  if (rating == null) return null;
+  const r = Math.floor(parseFloat(rating) * 2) / 2;
+  return `${r}+ rated`;
 }
 
 function buildPhotoUrl(ref, maxW = 400) {
@@ -558,9 +622,9 @@ export default function ResultsScreen() {
   const subcategoryConfig = getSubcategoryConfig(category, dateIdea);
   const label = subcategoryConfig.displayTitle;
   const locationLabel = plan.location || '';
-  const visibleResults = buildVisibleResults(fullResults, expanded);
-  const topPicks    = visibleResults.slice(0, 3);
-  const moreOptions = visibleResults.slice(3);
+  const visibleResults  = buildVisibleResults(fullResults, expanded);
+  const topPicks        = visibleResults.slice(0, 3);
+  const lockedPreviews  = fullResults.slice(3, 6);
   const showFavoritesOnCards =
     category === 'food' ||
     category === 'activity' ||
@@ -663,6 +727,27 @@ export default function ResultsScreen() {
 
       raw = lightFilter(raw);
       raw = raw.filter((p) => !isBlockedPlace(p));
+      // Block type mismatches per subcategory/dateIdea
+      raw = raw.filter((p) => {
+        const types = p.types || [];
+        const name = (p.name || '').toLowerCase();
+        const BEAUTY = ['beauty_salon', 'hair_care', 'spa'];
+        if (dateIdea === 'drinks') {
+          if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
+        }
+        if (activityType === 'arcade_gaming') {
+          if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
+          if (types.includes('bowling_alley') || types.includes('movie_theater')) return false;
+        }
+        if (activityType === 'outdoor_games') {
+          if ([...BEAUTY, 'health', 'movie_theater', 'lodging', 'real_estate_agency'].some((t) => types.includes(t))) return false;
+        }
+        if (activityType === 'water_activities') {
+          if ([...BEAUTY, 'movie_theater'].some((t) => types.includes(t))) return false;
+          if (name.includes('splash pad') || name.includes('playground') || name.includes('spray park')) return false;
+        }
+        return true;
+      });
       const usesControlledKeywordSearch = cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch;
       if (cfg.useActivityKeywordSearch) {
         if (dateIdea === 'outdoor') {
@@ -726,7 +811,29 @@ export default function ResultsScreen() {
           (minRev <= 0 || (p.totalRatings || 0) >= minRev)
         );
       });
-      // Keep closed places as fallback so lists don't collapse too aggressively.
+
+      // Expand search radius for escape_vr if too few results survive filtering
+      if (activityType === 'escape_vr' && raw.length < 3) {
+        for (const expandRadius of [40000, 60000]) {
+          if (raw.length >= 3) break;
+          try {
+            const expanded = await getActivityPlacesMerged(
+              { lat, lng },
+              { radius: expandRadius, maxPerKeyword: 10, dateIdea, keywords: activityKeywords }
+            );
+            const existingIds = new Set(raw.map((p) => p.id));
+            const newOnes = expanded
+              .filter((p) => !existingIds.has(p.id))
+              .filter((p) => !isBlockedPlace(p))
+              .filter((p) => !isPassiveOutdoorActivityPlace(p))
+              .filter((p) => !(p.types || []).includes('store'))
+              .filter((p) => !['beauty_salon', 'hair_care', 'spa', 'health'].some((t) => (p.types || []).includes(t)))
+              .filter((p) => p.rating == null || Number(p.rating) >= minRating)
+              .map((p) => ({ ...p, isExpanded: true }));
+            raw.push(...newOnes);
+          } catch {}
+        }
+      }
 
       const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
       const isActivityLike =
@@ -749,39 +856,76 @@ export default function ResultsScreen() {
         mainPool = diversifyActivities(mainPool);
       }
 
-      const curated = curateResults(mainPool);
-
-      const mapped = curated.map((p) => {
+      const mapped = mainPool.map((p) => {
         const distMeters = getDistanceMeters(lat, lng, p.location?.lat, p.location?.lng);
         const distMiles  = distMeters / 1609.34;
+        const inAreaThreshold = activityType === 'water_activities' ? 12 : 2.1;
         const inArea =
           cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch
-            ? distMiles <= 2.1
+            ? distMiles <= inAreaThreshold
             : (p.address || '').toLowerCase().includes(areaNameLower);
+        let nameBonus = 0;
+        if (activityType === 'water_activities') {
+          const n = (p.name || '').toLowerCase();
+          const addr = (p.address || '').toLowerCase();
+          const hasWater = WATER_SCORE_TERMS.some((t) => n.includes(t) || addr.includes(t));
+          nameBonus = hasWater ? 20 : ((p.types || []).includes('park') ? -10 : 0);
+        }
+        const finalScore = computeFinalScore({ distMiles, inArea, rating: p.rating, totalRatings: p.totalRatings, nameBonus });
         return {
-          id:           p.id,
-          name:         p.name,
-          rating:       p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
-          totalRatings: p.totalRatings || 0,
-          address:      p.address || '',
-          distance:     distMiles.toFixed(1),
+          id:              p.id,
+          name:            p.name,
+          rating:          p.rating != null ? parseFloat(p.rating).toFixed(1) : null,
+          totalRatings:    p.totalRatings || 0,
+          address:         p.address || '',
+          distance:        distMiles.toFixed(1),
           inArea,
-          isExpanded:   false,
-          types:        p.types || [],
-          photoUrl:     p.photoUrl,
-          location:     p.location,
-          priceLevel:   p.priceLevel ?? null,
-          openNow:      p.isOpenNow ?? null,
-          cuisine:      getCuisine(p.types || [], p.name || ''),
-          reviewSnippet: null,
-          hoursToday:    null,
+          isExpanded:      p.isExpanded || false,
+          types:           p.types || [],
+          photoUrl:        p.photoUrl,
+          location:        p.location,
+          priceLevel:      p.priceLevel ?? null,
+          openNow:         p.isOpenNow ?? null,
+          cuisine:         getCuisine(p.types || [], p.name || ''),
+          reviewSnippet:   null,
+          hoursToday:      null,
+          finalScore,
+          activityCategory: activityType ? activityType : (p.activityCategory ?? null),
         };
       });
 
-      if (cacheKey) _resultsCache.set(cacheKey, mapped);
-      setFullResults(mapped);
+      const deduped = deduplicatePlaces(mapped);
+
+      let finalResults = deduped;
+      if (deduped.length > 3) {
+        const withData = deduped.filter((p) => !(p.rating === null && p.totalRatings === 0));
+        if (withData.length >= 3) finalResults = withData;
+      }
+
+      finalResults.sort((a, b) => (b.finalScore || 0) - (a.finalScore || 0));
+
+      console.log(
+        '[Results] final displayed places (' + finalResults.length + ' total):',
+        finalResults.map((m, i) => ({
+          rank:            i + 1,
+          status:          i < 3 ? 'visible' : i < 6 ? 'locked-preview' : 'hidden',
+          name:            m.name,
+          rating:          m.rating,
+          reviews:         m.totalRatings,
+          address:         m.address,
+          distance:        m.distance + 'mi',
+          types:           m.types,
+          matchedKeyword:  m.activityCategory,
+          score:           m.finalScore,
+          inSelectedArea:  m.inArea,
+          isExpanded:      m.isExpanded,
+        }))
+      );
+
+      if (cacheKey) _resultsCache.set(cacheKey, finalResults);
+      setFullResults(finalResults);
       setExpanded(false);
-      enrichTopPlaces(mapped.slice(0, 10));
+      enrichTopPlaces(finalResults.slice(0, 10));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
@@ -836,12 +980,6 @@ export default function ResultsScreen() {
       } catch {}
     }
   }
-
-  // ── Expand — reveals more items from fullResults, no re-fetch ──
-  function expandSearch() {
-    setExpanded(true);
-  }
-
 
   // ── Manual search for specific place ─────────────────────────
   async function runManualSearch() {
@@ -971,13 +1109,11 @@ export default function ResultsScreen() {
               {CUISINE_TABS.map(t => (
                 <TouchableOpacity
                   key={t.key}
-                  style={[s.cuisineTab, selectedCuisine === t.key && s.cuisineTabActive]}
-                  onPress={() => handleCuisineSelect(t.key)}
+                  style={[s.cuisineTab, s.cuisineTabLocked]}
+                  onPress={() => setShowPaywall(true)}
                   activeOpacity={0.75}
                 >
-                  <Text style={[s.cuisineTabText, selectedCuisine === t.key && s.cuisineTabTextActive]}>
-                    {t.label}
-                  </Text>
+                  <Text style={s.cuisineTabText}>{t.label} 🔒</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1034,40 +1170,39 @@ export default function ResultsScreen() {
               />
             ))}
 
-            {/* ── More Options ── */}
-            {moreOptions.length > 0 && (
-              <View style={s.sectionHeaderRow}>
-                <View style={[s.sectionAccentDot, { backgroundColor: colors.gray3 }]} />
-                <Text style={s.sectionTitleMore}>More Options</Text>
-              </View>
-            )}
-            {moreOptions.map((p, i) => (
-              <ResultsPlaceCard
-                key={p.id}
-                place={p}
-                onPress={() => openDetail(p)}
-                variant="default"
-                rank={topPicks.length + i + 1}
-                isFavorite={isFavorite(p)}
-                onToggleFavorite={toggleFavorite}
-                showFavorite={showFavoritesOnCards}
-              />
-            ))}
-
-            {/* ── Expand banner — only when there are more items to reveal ── */}
-            {!expanded && (fullResults.length > visibleResults.length || dateIdea === 'outdoor') && (
-              <View style={[s.expandBanner, { marginTop: 24 }]}>
-                <Text style={s.expandBannerText}>
-                  Want to see more options?
-                </Text>
-                <TouchableOpacity
-                  style={s.expandBtn}
-                  onPress={expandSearch}
-                  activeOpacity={0.85}
-                >
-                  <Text style={s.expandBtnText}>🔍 Show More Results</Text>
-                </TouchableOpacity>
-              </View>
+            {/* ── Locked previews — always shown after top 3, tap to unlock ── */}
+            {lockedPreviews.length > 0 && (
+              <>
+                <View style={s.sectionHeaderRow}>
+                  <View style={[s.sectionAccentDot, { backgroundColor: colors.gray3 }]} />
+                  <Text style={s.sectionTitleMore}>More Options</Text>
+                </View>
+                {lockedPreviews.map((p, i) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={s.lockedCard}
+                    onPress={() => setShowPaywall(true)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={s.lockedCardInfo}>
+                      <Text style={s.lockedPickLabel}>Mystery Pick #{i + 1}</Text>
+                      <Text style={s.lockedCategoryText}>{getLockedCategoryLabel(dateIdea)}</Text>
+                      <View style={s.lockedMetaRow}>
+                        {p.distance != null && (
+                          <Text style={s.lockedMetaText}>📍 {p.distance} mi away</Text>
+                        )}
+                        {p.rating != null && (
+                          <Text style={s.lockedMetaText}>⭐ {getRatingHint(p.rating)}</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={s.lockedCardAction}>
+                      <Text style={s.lockIcon}>🔒</Text>
+                      <Text style={s.lockCtaText}>Unlock to{'\n'}reveal</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
             )}
 
             {/* ── Manual search button ── */}
@@ -1181,22 +1316,7 @@ export default function ResultsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <PaywallModal
-        visible={showPaywall}
-        onClose={() => setShowPaywall(false)}
-        onUpgrade={() => {
-          console.log('[Paywall] upgrade clicked');
-          setShowPaywall(false);
-        }}
-        onGet20MorePlans={async () => {
-          await addExtraRuns(20);
-          setShowPaywall(false);
-        }}
-        onGet50MorePlans={async () => {
-          await addExtraRuns(50);
-          setShowPaywall(false);
-        }}
-      />
+      <PaywallModal visible={showPaywall} onClose={() => setShowPaywall(false)} />
     </View>
   );
 }
@@ -1276,6 +1396,62 @@ const s = StyleSheet.create({
     color: colors.gold,
   },
 
+  // ── Locked preview cards ─────────────────────────────────────
+  lockedCard: {
+    backgroundColor: colors.cream2,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.gray4,
+    marginBottom: 12,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  lockedCardInfo: {
+    flex: 1,
+  },
+  lockedPickLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: colors.gray2,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  },
+  lockedCategoryText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+    color: colors.charcoal,
+    marginBottom: 6,
+  },
+  lockedMetaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  lockedMetaText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.gray2,
+  },
+  lockedCardAction: {
+    alignItems: 'center',
+    paddingLeft: 14,
+    gap: 4,
+  },
+  lockIcon: {
+    fontSize: 22,
+  },
+  lockCtaText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.rose,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+
   // ── Manual search button ─────────────────────────────────────
   manualSearchBtn: {
     borderRadius: 999,
@@ -1328,4 +1504,5 @@ const s = StyleSheet.create({
   cuisineTabActive:   { borderColor: colors.rose, backgroundColor: 'rgba(212,149,111,0.10)' },
   cuisineTabText:     { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.gray2 },
   cuisineTabTextActive: { color: colors.rose },
+  cuisineTabLocked:     { opacity: 0.65 },
 });
