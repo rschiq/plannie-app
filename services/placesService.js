@@ -1,6 +1,14 @@
 // services/placesService.js
 // Category search + helpers used across plan flow, cart, and results.
 import { getNearbyPlaces } from './nearbyPlacesService';
+import {
+  TEST_MODE,
+  trackApiCall,
+  isLimitReached,
+  makeCacheKey,
+  getApiCache,
+  setApiCache,
+} from '../utils/devConfig';
 
 const GOOGLE_API_KEY = 'AIzaSyBuaZy0PskAbddfeyxarwdMRsUa6WiRP9w';
 
@@ -124,6 +132,13 @@ export async function getPlacesNearby(types, coords, options = {}) {
   const radius = options.radius ?? 8000;
   const maxResults = Math.min(Math.max(options.maxResults ?? 12, 1), 40);
 
+  if (TEST_MODE) {
+    if (isLimitReached()) return [];
+    const ck = makeCacheKey(lat, lng, 'nearby', searchTypes.slice().sort().join(','), radius, options.keyword || '');
+    const cached = getApiCache(ck);
+    if (cached) return cached;
+  }
+
   const customKw =
     options.keyword != null && String(options.keyword).trim() !== ''
       ? String(options.keyword).trim()
@@ -184,6 +199,11 @@ export async function getPlacesNearby(types, coords, options = {}) {
 
       const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
 
+      if (TEST_MODE) {
+        if (isLimitReached()) return;
+        trackApiCall({ fn: 'getPlacesNearby', radius, keyword: keyword || type });
+      }
+
       try {
         const res = await fetch(url);
         const data = await res.json();
@@ -233,7 +253,12 @@ export async function getPlacesNearby(types, coords, options = {}) {
 
   results = Array.from(uniqueMap.values());
 
-  return results.filter((p) => p.location).slice(0, maxResults);
+  const final = results.filter((p) => p.location).slice(0, maxResults);
+  if (TEST_MODE) {
+    const ck = makeCacheKey(lat, lng, 'nearby', searchTypes.slice().sort().join(','), radius, options.keyword || '');
+    setApiCache(ck, final);
+  }
+  return final;
 }
 
 /** Parks, trails, passive nature — exclude from activity keyword results. */
@@ -309,7 +334,7 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   const radius = options.radius ?? 10000;
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
   const dateIdea = String(options.dateIdea || '').toLowerCase();
-  const activeKeywords = Array.isArray(options.keywords) && options.keywords.length > 0
+  let activeKeywords = Array.isArray(options.keywords) && options.keywords.length > 0
     ? options.keywords
     : dateIdea === 'indoor'
       ? INDOOR_ACTIVITY_KEYWORDS
@@ -317,6 +342,14 @@ export async function getActivityPlacesMerged(coords, options = {}) {
         ? OUTDOOR_ACTIVITY_KEYWORDS
         : ACTIVITY_MERGE_KEYWORDS;
   console.log('[ActivityEngine] start radius:', radius);
+
+  if (TEST_MODE) {
+    if (isLimitReached()) return [];
+    const ck = makeCacheKey(lat, lng, 'activity', activeKeywords.slice().sort().join(','), radius);
+    const cached = getApiCache(ck);
+    if (cached) return cached;
+    if (activeKeywords.length > 5) activeKeywords = activeKeywords.slice(0, 5);
+  }
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -359,6 +392,10 @@ export async function getActivityPlacesMerged(coords, options = {}) {
   await Promise.all(
     activeKeywords.map(async (keyword) => {
       console.log('[ActivityEngine] keyword:', keyword);
+      if (TEST_MODE) {
+        if (isLimitReached()) return;
+        trackApiCall({ fn: 'getActivityPlacesMerged', dateIdea, keyword, radius });
+      }
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
         radius: String(radius),
@@ -439,6 +476,10 @@ export async function getActivityPlacesMerged(coords, options = {}) {
       return !isPassiveOutdoorActivityPlace(p);
     });
   console.log('[ActivityEngine] merged total:', mergedResults.length);
+  if (TEST_MODE) {
+    const ck = makeCacheKey(lat, lng, 'activity', activeKeywords.slice().sort().join(','), radius);
+    setApiCache(ck, mergedResults);
+  }
   return mergedResults;
 }
 
@@ -453,6 +494,13 @@ export async function getMoviePlacesMerged(coords, options = {}) {
   const maxPerKeyword = Math.min(Math.max(options.maxPerKeyword ?? 10, 1), 20);
   const maxPerChain = Math.min(Math.max(options.maxPerChain ?? 3, 1), 5);
   const maxTotal = Math.min(Math.max(options.maxTotal ?? 10, 1), 20);
+
+  if (TEST_MODE) {
+    if (isLimitReached()) return [];
+    const ck = makeCacheKey(lat, lng, 'movie', radius);
+    const cached = getApiCache(ck);
+    if (cached) return cached;
+  }
 
   const toMiles = (from, to) => {
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') return null;
@@ -484,6 +532,10 @@ export async function getMoviePlacesMerged(coords, options = {}) {
   const byId = new Map();
   await Promise.all(
     MOVIE_MERGE_KEYWORDS.map(async (keyword) => {
+      if (TEST_MODE) {
+        if (isLimitReached()) return;
+        trackApiCall({ fn: 'getMoviePlacesMerged', keyword, radius });
+      }
       const params = new URLSearchParams({
         location: `${lat},${lng}`,
         radius: String(radius),
@@ -546,11 +598,22 @@ export async function getMoviePlacesMerged(coords, options = {}) {
     return chainCounts[c] <= maxPerChain;
   });
 
-  return balanced.slice(0, maxTotal);
+  const final = balanced.slice(0, maxTotal);
+  if (TEST_MODE) {
+    const ck = makeCacheKey(lat, lng, 'movie', radius);
+    setApiCache(ck, final);
+  }
+  return final;
 }
 
 export async function fetchPlaceDetails(placeId) {
   if (!placeId) return null;
+
+  if (TEST_MODE) {
+    if (isLimitReached()) return null;
+    trackApiCall({ fn: 'fetchPlaceDetails', keyword: placeId });
+  }
+
   const fields = 'name,rating,user_ratings_total,formatted_address,photos,opening_hours,reviews,price_level';
   const url =
     'https://maps.googleapis.com/maps/api/place/details/json?' +

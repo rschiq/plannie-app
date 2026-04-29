@@ -39,15 +39,26 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
           <Stack.Screen name="plan/details" />
+          <Stack.Screen name="plan/category" />
+          <Stack.Screen name="plan/dateIdea" />
+          <Stack.Screen name="plan/activityType" />
+          <Stack.Screen name="plan/results" />
+          <Stack.Screen name="plan/choose-for-me" />
+          <Stack.Screen name="plan/surprise" />
+          <Stack.Screen name="plan/budget" />
+          <Stack.Screen name="plan/who" />
+          <Stack.Screen name="plan/moment" />
           <Stack.Screen name="plan/how" />
           <Stack.Screen name="plan/vibe" />
           <Stack.Screen name="plan/activity" />
           <Stack.Screen name="plan/food-ask" />
           <Stack.Screen name="plan/food" />
-          <Stack.Screen name="plan/dateIdea" />
           <Stack.Screen name="plan/addons" />
           <Stack.Screen name="plan/cart" />
           <Stack.Screen name="pro" />
+          <Stack.Screen name="paywall/index" />
+          <Stack.Screen name="auth/login" />
+          <Stack.Screen name="auth/signup" />
         </Stack>
       </PlanProvider>
     </PremiumProvider>

@@ -14,6 +14,7 @@ import {
   isPassiveOutdoorActivityPlace,
 } from '../../services/placesService';
 import { consumeRunIfAvailable } from '../../utils/runLimiter';
+import { TEST_MODE } from '../../utils/devConfig';
 import PaywallModal from '../../components/PaywallModal';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -487,6 +488,7 @@ export default function ChooseForMeScreen() {
   }
 
   async function expandActivitySearch() {
+    if (TEST_MODE) { console.log('[TEST_MODE] skipping activity expansion'); return; }
     if (!plan.coords?.lat || !plan.coords?.lng) return;
     setActivityExpandLoading(true);
     const areaName = (plan.location || '').split(',')[0].trim();
@@ -501,6 +503,7 @@ export default function ChooseForMeScreen() {
   }
 
   async function expandRestaurantSearch() {
+    if (TEST_MODE) { console.log('[TEST_MODE] skipping restaurant expansion'); return; }
     if (!plan.coords?.lat || !plan.coords?.lng) return;
     setRestaurantExpandLoading(true);
     const areaName = (plan.location || '').split(',')[0].trim();
@@ -518,6 +521,7 @@ export default function ChooseForMeScreen() {
 
   // Expand a specific cuisine's list when it has fewer than 3 items
   async function expandCuisineIfThin(cuisine) {
+    if (TEST_MODE) { console.log('[TEST_MODE] skipping cuisine expansion'); return; }
     if (cuisine === 'all') return;
     const current = cuisineMap[cuisine] || [];
     if (current.length >= 3) return;

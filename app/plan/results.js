@@ -19,6 +19,7 @@ import {
 import RizzLoader from '../../components/RizzLoader';
 import { minLoadingDisplaySince } from '../../utils/minLoadingDisplay';
 import { consumeRunIfAvailable } from '../../utils/runLimiter';
+import { TEST_MODE, getMockPlaces } from '../../utils/devConfig';
 import PaywallModal from '../../components/PaywallModal';
 import { useSavedPlaces } from '../../hooks/useSavedPlaces';
 import ResultsPlaceCard from '../../components/ResultsPlaceCard';
@@ -550,6 +551,39 @@ const nav = StyleSheet.create({
   tabLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.gray2 },
 });
 
+function isStrongResult(p) {
+  return p.rating != null && (p.totalRatings || 0) >= 10;
+}
+
+function getActivityExpansionRadii(initialRadius) {
+  if (initialRadius <= 15000) return [30000, 50000];
+  if (initialRadius <= 25000) return [40000, 60000];
+  return [Math.min(Math.round(initialRadius * 1.5), 80000)];
+}
+
+function filterBySubcategoryType(places, activityType, dateIdea) {
+  const BEAUTY = ['beauty_salon', 'hair_care', 'spa'];
+  return places.filter((p) => {
+    const types = p.types || [];
+    const name = (p.name || '').toLowerCase();
+    if (dateIdea === 'drinks') {
+      if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
+    }
+    if (activityType === 'arcade_gaming') {
+      if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
+      if (types.includes('bowling_alley') || types.includes('movie_theater')) return false;
+    }
+    if (activityType === 'outdoor_games') {
+      if ([...BEAUTY, 'health', 'movie_theater', 'lodging', 'real_estate_agency'].some((t) => types.includes(t))) return false;
+    }
+    if (activityType === 'water_activities') {
+      if ([...BEAUTY, 'movie_theater'].some((t) => types.includes(t))) return false;
+      if (name.includes('splash pad') || name.includes('playground') || name.includes('spray park')) return false;
+    }
+    return true;
+  });
+}
+
 // ── Results cache — persists across navigations within a session ─
 const _resultsCache = new Map();
 
@@ -661,7 +695,7 @@ export default function ResultsScreen() {
       console.log('[Results] cache hit:', cacheKey, cached.length, 'results');
       setFullResults(cached);
       setExpanded(false);
-      enrichTopPlaces(cached.slice(0, 10));
+      if (!TEST_MODE) enrichTopPlaces(cached.slice(0, 10));
       await minLoadingDisplaySince(startTime);
       setLoading(false);
       fetchingRef.current = false;
@@ -700,7 +734,11 @@ export default function ResultsScreen() {
       const activityKeywords = activityTypeCfg?.keywords ?? null;
 
       let raw;
-      if (cfg.useActivityKeywordSearch) {
+      const _mock = TEST_MODE ? getMockPlaces(lat, lng, dateIdea, activityType) : null;
+      if (_mock) {
+        console.log('[TEST_MODE] using mock/cached results, no API call');
+        raw = _mock;
+      } else if (cfg.useActivityKeywordSearch) {
         raw = await getActivityPlacesMerged(
           { lat, lng },
           {
@@ -727,27 +765,7 @@ export default function ResultsScreen() {
 
       raw = lightFilter(raw);
       raw = raw.filter((p) => !isBlockedPlace(p));
-      // Block type mismatches per subcategory/dateIdea
-      raw = raw.filter((p) => {
-        const types = p.types || [];
-        const name = (p.name || '').toLowerCase();
-        const BEAUTY = ['beauty_salon', 'hair_care', 'spa'];
-        if (dateIdea === 'drinks') {
-          if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
-        }
-        if (activityType === 'arcade_gaming') {
-          if ([...BEAUTY, 'health'].some((t) => types.includes(t))) return false;
-          if (types.includes('bowling_alley') || types.includes('movie_theater')) return false;
-        }
-        if (activityType === 'outdoor_games') {
-          if ([...BEAUTY, 'health', 'movie_theater', 'lodging', 'real_estate_agency'].some((t) => types.includes(t))) return false;
-        }
-        if (activityType === 'water_activities') {
-          if ([...BEAUTY, 'movie_theater'].some((t) => types.includes(t))) return false;
-          if (name.includes('splash pad') || name.includes('playground') || name.includes('spray park')) return false;
-        }
-        return true;
-      });
+      raw = filterBySubcategoryType(raw, activityType, dateIdea);
       const usesControlledKeywordSearch = cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch;
       if (cfg.useActivityKeywordSearch) {
         if (dateIdea === 'outdoor') {
@@ -812,28 +830,81 @@ export default function ResultsScreen() {
         );
       });
 
-      // Expand search radius for escape_vr if too few results survive filtering
-      if (activityType === 'escape_vr' && raw.length < 3) {
-        for (const expandRadius of [40000, 60000]) {
-          if (raw.length >= 3) break;
+      // Category-aware progressive radius expansion
+      let expansionTriggered = false;
+      if (TEST_MODE) {
+        console.log('[TEST_MODE] skipping progressive expansion');
+      } else {
+      const initialStrongCount = raw.filter(isStrongResult).length;
+
+      if (cfg.useActivityKeywordSearch) {
+        console.log('[Results] activity initial:', { dateIdea, activityType, radius: fetchRadius, survivors: raw.length, strong: initialStrongCount });
+        if (initialStrongCount < 3) {
+          for (const expandRadius of getActivityExpansionRadii(fetchRadius)) {
+            if (raw.filter(isStrongResult).length >= 3) break;
+            try {
+              const expanded = await getActivityPlacesMerged(
+                { lat, lng },
+                { radius: expandRadius, maxPerKeyword: 10, dateIdea, keywords: activityKeywords }
+              );
+              const existingIds = new Set(raw.map((p) => p.id));
+              const newOnes = expanded
+                .filter((p) => !existingIds.has(p.id))
+                .filter((p) => !isBlockedPlace(p))
+                .filter((p) => filterBySubcategoryType([p], activityType, dateIdea).length > 0)
+                .filter((p) => {
+                  if (dateIdea === 'outdoor') {
+                    if (activityType !== 'water_activities') {
+                      const n = (p.name || '').toLowerCase();
+                      const types = p.types || [];
+                      if (n.includes('dog park') || n.includes('dog run') || n.includes('off-leash') || n.includes('bark park')) return false;
+                      if (n.includes('trailhead') || n.includes('trail head')) return false;
+                      if (n.includes('wildlife') || n.includes('wetland') || n.includes('marsh') || n.includes('slough')) return false;
+                      if (n.includes('preserve') || n.includes('conservation area') || n.includes('nature reserve')) return false;
+                      if (n.includes(' campground') || n.includes('rv park') || n.includes('campsite')) return false;
+                      if (types.includes('rv_park')) return false;
+                    }
+                    const types = p.types || [];
+                    if (types.includes('bar') || types.includes('night_club') || types.includes('store')) return false;
+                  } else {
+                    if (isPassiveOutdoorActivityPlace(p)) return false;
+                    if ((p.types || []).includes('store')) return false;
+                  }
+                  return true;
+                })
+                .filter((p) => p.rating == null || Number(p.rating) >= minRating)
+                .map((p) => ({ ...p, isExpanded: true }));
+              raw.push(...newOnes);
+              expansionTriggered = true;
+              console.log('[Results] expansion:', { activityType, expandedRadius: expandRadius, totalAfterExpansion: raw.length, strongAfterExpansion: raw.filter(isStrongResult).length });
+            } catch {}
+          }
+        }
+      } else if (!cfg.useMovieKeywordSearch && !cuisineKeyword) {
+        const foodStrongCount = raw.filter(isStrongResult).length;
+        console.log('[Results] food initial:', { dateIdea, radius: fetchRadius, survivors: raw.length, strong: foodStrongCount });
+        if (foodStrongCount < 5) {
           try {
-            const expanded = await getActivityPlacesMerged(
-              { lat, lng },
-              { radius: expandRadius, maxPerKeyword: 10, dateIdea, keywords: activityKeywords }
-            );
+            const expandRadius = 15000;
+            const expanded = await getPlacesNearby(cfg.fetchTypes, { lat, lng }, {
+              radius: expandRadius,
+              maxResults: 40,
+              keyword: cfg.keyword || undefined,
+            });
             const existingIds = new Set(raw.map((p) => p.id));
             const newOnes = expanded
               .filter((p) => !existingIds.has(p.id))
               .filter((p) => !isBlockedPlace(p))
-              .filter((p) => !isPassiveOutdoorActivityPlace(p))
-              .filter((p) => !(p.types || []).includes('store'))
-              .filter((p) => !['beauty_salon', 'hair_care', 'spa', 'health'].some((t) => (p.types || []).includes(t)))
-              .filter((p) => p.rating == null || Number(p.rating) >= minRating)
+              .filter((p) => filterBySubcategoryType([p], activityType, dateIdea).length > 0)
+              .filter((p) => p.rating != null && Number(p.rating) >= (cfg.minRating ?? 4.0))
               .map((p) => ({ ...p, isExpanded: true }));
             raw.push(...newOnes);
+            expansionTriggered = newOnes.length > 0;
+            console.log('[Results] expansion:', { dateIdea, expandedRadius: expandRadius, totalAfterExpansion: raw.length, strongAfterExpansion: raw.filter(isStrongResult).length });
           } catch {}
         }
       }
+      } // end !TEST_MODE expansion
 
       const byAddress = raw.filter((p) => (p.address || '').toLowerCase().includes(areaNameLower));
       const isActivityLike =
@@ -844,7 +915,8 @@ export default function ResultsScreen() {
 
       let mainPool;
       if (cfg.useActivityKeywordSearch || cfg.useMovieKeywordSearch) {
-        // Activity local-first is radius-based, not address-substring based.
+        mainPool = raw;
+      } else if (expansionTriggered) {
         mainPool = raw;
       } else if (isActivityLike && byAddress.length === 0 && raw.length > 0) {
         mainPool = raw;
@@ -925,7 +997,7 @@ export default function ResultsScreen() {
       if (cacheKey) _resultsCache.set(cacheKey, finalResults);
       setFullResults(finalResults);
       setExpanded(false);
-      enrichTopPlaces(finalResults.slice(0, 10));
+      if (!TEST_MODE) enrichTopPlaces(finalResults.slice(0, 10));
     } catch (e) {
       console.log('[Results] fetch error:', e.message);
       setError(e.message);
